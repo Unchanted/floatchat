@@ -15,6 +15,7 @@ export interface WebSocketResponse {
   result?: any;
   error?: string;
   traceback?: string;
+  thinking?: string[];
 }
 
 export class WebSocketService {

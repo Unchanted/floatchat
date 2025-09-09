@@ -271,7 +271,18 @@ async def websocket_endpoint(ws: WebSocket):
 
             # Stage 1: Analyzing
             await ws.send_text(
-                json.dumps({"stage": "analyzing", "message": "🔎 Analyzing your query"})
+                json.dumps({
+                    "stage": "analyzing", 
+                    "message": "🔎 Analyzing your query",
+                    "thinking": [
+                        "Understanding the ocean data request",
+                        "Identifying geographical parameters",
+                        "Determining time range requirements",
+                        "Selecting relevant ocean variables",
+                        "Validating query parameters",
+                        "Preparing for AI processing"
+                    ]
+                })
             )
 
             loop = asyncio.get_running_loop()
@@ -297,6 +308,14 @@ async def websocket_endpoint(ws: WebSocket):
                         {
                             "stage": "sql_generation",
                             "message": "🛠 Generating SQL for your request",
+                            "thinking": [
+                                "Parsing natural language to structured query",
+                                "Extracting geographical coordinates",
+                                "Building database query parameters",
+                                "Validating query constraints",
+                                "Optimizing query performance",
+                                "Preparing data retrieval strategy"
+                            ]
                         }
                     )
                 )
@@ -329,6 +348,15 @@ async def websocket_endpoint(ws: WebSocket):
                                 {
                                     "stage": "db_fetch",
                                     "message": "📡 Fetching data from PostgreSQL",
+                                    "thinking": [
+                                        "Connecting to Argo global database",
+                                        "Querying ocean float measurements",
+                                        "Filtering by geographical region",
+                                        "Applying time range constraints",
+                                        "Retrieving temperature, salinity, and pressure data",
+                                        "Validating data quality and completeness",
+                                        "Organizing results by location and time"
+                                    ]
                                 }
                             )
                         )
@@ -376,7 +404,19 @@ async def websocket_endpoint(ws: WebSocket):
                         )
                         await ws.send_text(
                             json.dumps(
-                                {"stage": "processing", "message": "⚙️ Processing data"}
+                                {
+                                    "stage": "processing", 
+                                    "message": "⚙️ Processing data",
+                                    "thinking": [
+                                        "Cleaning and validating ocean measurements",
+                                        "Filtering data by requested variables",
+                                        "Organizing results by location and time",
+                                        "Preparing data for visualization",
+                                        "Generating summary statistics",
+                                        "Creating data quality reports",
+                                        "Finalizing analysis results"
+                                    ]
+                                }
                             )
                         )
                         # result = process_data(raw_result)  # wrap your pandas/cleaning logic here
@@ -462,9 +502,22 @@ async def websocket_endpoint(ws: WebSocket):
                         # Stage 5: Completed
                         await ws.send_text(
                             json.dumps(
-                                {"stage": "completed", "message": "✅ Data ready"}
+                                {
+                                    "stage": "completed", 
+                                    "message": "✅ Data ready",
+                                    "thinking": [
+                                        "Finalizing data processing",
+                                        "Preparing response format",
+                                        "Generating user-friendly summary",
+                                        "Ready to display results"
+                                    ]
+                                }
                             )
                         )
+                        
+                        # Add a small delay to let the thinking animation complete
+                        await asyncio.sleep(2)
+                        
                         await ws.send_text(
                             json.dumps(
                                 {
