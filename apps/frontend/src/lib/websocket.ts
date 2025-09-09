@@ -3,10 +3,18 @@ export interface WebSocketMessage {
 }
 
 export interface WebSocketResponse {
-  type: string;
-  content: string;
-  query: string;
-  timestamp: number;
+  // Original format
+  type?: string;
+  content?: string;
+  query?: string;
+  timestamp?: number;
+  
+  // Backend stage messages
+  stage?: string;
+  message?: string;
+  result?: any;
+  error?: string;
+  traceback?: string;
 }
 
 export class WebSocketService {

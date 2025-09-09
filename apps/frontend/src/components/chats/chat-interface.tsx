@@ -8,7 +8,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { WelcomeScreen } from "./welcome-screen";
 import { Search, Sparkles, MoreHorizontal } from "lucide-react";
-import { WebSocketService, WebSocketResponse } from "../../lib/websocket";
+import { WebSocketService } from "../../lib/websocket";
 
 type Role = "user" | "assistant";
 
@@ -22,7 +22,23 @@ export interface Message {
 
 interface LoadingState {
   isLoading: boolean;
-  stage?: "searching" | "analyzing" | "generating";
+  stage?: "analyzing" | "searching" | "generating" | "processing";
+}
+
+// Updated WebSocket response interface to handle all backend message types
+export interface WebSocketResponse {
+  // Original format
+  type?: string;
+  content?: string;
+  query?: string;
+  timestamp?: number;
+  
+  // Backend stage messages
+  stage?: string;
+  message?: string;
+  result?: any;
+  error?: string;
+  traceback?: string;
 }
 
 export function ChatInterface() {
@@ -32,54 +48,215 @@ export function ChatInterface() {
   const wsServiceRef = useRef<WebSocketService | null>(null);
   const lastSentUserMessageIdRef = useRef<string | null>(null);
 
+  // Helper function to format result data for display
+  const formatResultForDisplay = (result: any): string => {
+    if (!result) return "No data available.";
+    
+    try {
+      if (result.summary) {
+        // Handle single box/region query
+        const dataCount = Array.isArray(result.summary) ? result.summary.length : 'multiple';
+        return `🌊 **Ocean Data Analysis Complete**\n\nI found oceanographic data with ${dataCount} Argo float measurements in your requested region. The data includes temperature, salinity, and pressure profiles from autonomous floats drifting in the ocean.\n\n**Key Findings:**\n- Data points collected from Argo global ocean observing system\n- Measurements span the requested geographical area and time period\n- Includes vertical profiles of ocean properties\n\nThis data provides valuable insights into ocean conditions and can be used for climate research, weather forecasting, and marine ecosystem studies.`;
+      } else if (result.summaries) {
+        // Handle multiple point queries
+        const totalPoints = result.summaries.length;
+        const successfulPoints = result.summaries.filter((s: any) => !s.error).length;
+        const errorPoints = totalPoints - successfulPoints;
+        
+        let content = `🌊 **Multi-Point Ocean Data Analysis**\n\nAnalyzed ${totalPoints} locations in the ocean:\n\n`;
+        
+        if (successfulPoints > 0) {
+          content += `✅ **Successfully retrieved data from ${successfulPoints} locations**\n`;
+        }
+        
+        if (errorPoints > 0) {
+          content += `⚠️ **${errorPoints} locations had no available data**\n`;
+        }
+        
+        content += `\n**Data Summary:**\n`;
+        result.summaries.forEach((summary: any, index: number) => {
+          const point = summary.point;
+          if (summary.error) {
+            content += `- Point ${index + 1} (${point.lat}°N, ${point.lon}°E): No data available\n`;
+          } else {
+            content += `- Point ${index + 1} (${point.lat}°N, ${point.lon}°E): Data retrieved\n`;
+          }
+        });
+        
+        return content;
+      } else if (typeof result === 'object') {
+        // Fallback for other object types
+        return `📊 **Data Retrieved Successfully**\n\nReceived oceanographic data from your query. The response contains:\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
+      } else {
+        return result.toString();
+      }
+    } catch (error) {
+      console.error("Error formatting result:", error);
+      return "Data received successfully, but couldn't format for display. Check console for raw data.";
+    }
+  };
+
   useEffect(() => {
     // Initialize WebSocket connection
     const initWebSocket = async () => {
       try {
+        console.log("🔄 Initializing WebSocket connection...");
         wsServiceRef.current = new WebSocketService();
         
-        // Set up event handlers
+        // Set up enhanced event handlers
         wsServiceRef.current.onMessage((data: WebSocketResponse) => {
-          console.log("=== WEBSOCKET RESPONSE ===");
+          console.group("💬 Processing WebSocket Response");
           console.log("Full response object:", data);
-          console.log("Response type:", data.type);
-          console.log("Response content:", data.content);
-          console.log("Original query:", data.query);
-          console.log("Timestamp:", data.timestamp);
-          console.log("=========================");
+          console.log("Stage:", data.stage);
+          console.log("Message:", data.message);
+          console.log("Result:", data.result);
+          console.log("Type:", data.type);
+          console.log("Content:", data.content);
+          console.groupEnd();
           
-          const assistant: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: data.content,
-            timestamp: new Date().toISOString(),
-            sources: [
-              { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
-              { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
-              { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
-            ],
-          };
-          setMessages((m) => [...m, assistant]);
-          setLoadingState({ isLoading: false });
+          // Handle different message types from backend
+          if (data.stage) {
+            switch (data.stage) {
+              case "analyzing":
+                console.log("🔎 Stage: Analyzing query");
+                setLoadingState({ isLoading: true, stage: "analyzing" });
+                break;
+                
+              case "sql_generation":
+                console.log("🛠 Stage: Generating SQL");
+                setLoadingState({ isLoading: true, stage: "searching" });
+                break;
+                
+              case "db_fetch":
+                console.log("📡 Stage: Fetching from database");
+                setLoadingState({ isLoading: true, stage: "analyzing" });
+                break;
+                
+              case "processing":
+                console.log("⚙️ Stage: Processing data");
+                setLoadingState({ isLoading: true, stage: "generating" });
+                break;
+                
+              case "completed":
+                console.log("✅ Stage: Processing completed");
+                // Keep loading state until we get the actual result
+                setLoadingState({ isLoading: true, stage: "generating" });
+                break;
+                
+              case "result":
+                console.log("📋 Stage: Final result received");
+                const assistant: Message = {
+                  id: crypto.randomUUID(),
+                  role: "assistant",
+                  content: formatResultForDisplay(data.result),
+                  timestamp: new Date().toISOString(),
+                  sources: [
+                    { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
+                    { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
+                    { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
+                  ],
+                };
+                setMessages((m) => [...m, assistant]);
+                setLoadingState({ isLoading: false });
+                break;
+                
+              case "error":
+                console.error("❌ Stage: Error occurred");
+                const errorMessage: Message = {
+                  id: crypto.randomUUID(),
+                  role: "assistant",
+                  content: `❌ **Error Processing Request**\n\n${data.message}\n\n${data.traceback ? `**Technical Details:**\n\`\`\`\n${data.traceback}\n\`\`\`` : ''}`,
+                  timestamp: new Date().toISOString(),
+                };
+                setMessages((m) => [...m, errorMessage]);
+                setLoadingState({ isLoading: false });
+                break;
+                
+              case "no_function_call":
+                console.log("💭 Stage: No function call from Gemini");
+                const textMessage: Message = {
+                  id: crypto.randomUUID(),
+                  role: "assistant",
+                  content: data.message || "I couldn't process your request as a structured query. Please try rephrasing your question about ocean data.",
+                  timestamp: new Date().toISOString(),
+                };
+                setMessages((m) => [...m, textMessage]);
+                setLoadingState({ isLoading: false });
+                break;
+                
+              default:
+                console.warn("⚠️ Unknown message stage:", data.stage);
+                // Handle as generic message
+                if (data.message) {
+                  const genericMessage: Message = {
+                    id: crypto.randomUUID(),
+                    role: "assistant",
+                    content: data.message,
+                    timestamp: new Date().toISOString(),
+                  };
+                  setMessages((m) => [...m, genericMessage]);
+                  setLoadingState({ isLoading: false });
+                }
+            }
+          } else if (data.type && data.content) {
+            // Handle original format messages
+            console.log("📨 Handling original format message");
+            const assistant: Message = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: data.content,
+              timestamp: new Date().toISOString(),
+              sources: [
+                { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
+                { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
+                { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
+              ],
+            };
+            setMessages((m) => [...m, assistant]);
+            setLoadingState({ isLoading: false });
+          } else if (data.error) {
+            // Handle direct error messages
+            console.error("❌ Direct error message received");
+            const errorMsg: Message = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: `❌ **Error**: ${data.error}`,
+              timestamp: new Date().toISOString(),
+            };
+            setMessages((m) => [...m, errorMsg]);
+            setLoadingState({ isLoading: false });
+          }
         });
 
         wsServiceRef.current.onError((error) => {
-          console.error("WebSocket error:", error);
+          console.group("❌ WebSocket Error");
+          console.error("Error details:", error);
+          console.log("Connection status before error:", connectionStatus);
+          console.groupEnd();
+          
           setConnectionStatus('disconnected');
           setLoadingState({ isLoading: false });
         });
 
         wsServiceRef.current.onClose((event) => {
-          console.log("WebSocket closed:", event.code, event.reason);
+          console.group("🔌 WebSocket Connection Closed");
+          console.log("Close code:", event.code);
+          console.log("Close reason:", event.reason);
+          console.log("Was clean:", event.wasClean);
+          console.groupEnd();
+          
           setConnectionStatus('disconnected');
           setLoadingState({ isLoading: false });
         });
 
         // Connect to WebSocket
         await wsServiceRef.current.connect();
+        console.log("✅ WebSocket connected successfully");
         setConnectionStatus('connected');
       } catch (error) {
-        console.error("Failed to initialize WebSocket:", error);
+        console.group("❌ WebSocket Initialization Failed");
+        console.error("Error:", error);
+        console.groupEnd();
         setConnectionStatus('disconnected');
       }
     };
@@ -103,23 +280,15 @@ export function ChatInterface() {
     };
     setMessages((m) => [...m, userMsg]);
     lastSentUserMessageIdRef.current = userMsg.id;
-    setLoadingState({ isLoading: true, stage: "searching" });
-
-    // Simulate multi-stage loading
-    setTimeout(() => {
-      setLoadingState({ isLoading: true, stage: "analyzing" });
-    }, 800);
-
-    setTimeout(() => {
-      setLoadingState({ isLoading: true, stage: "generating" });
-    }, 1600);
+    setLoadingState({ isLoading: true, stage: "analyzing" });
 
     try {
       if (wsServiceRef.current && wsServiceRef.current.isConnected()) {
-        console.log("=== SENDING WEBSOCKET MESSAGE ===");
+        console.group("📤 Sending WebSocket Message");
         console.log("Query:", text);
         console.log("Message object:", { query: text });
-        console.log("=================================");
+        console.groupEnd();
+        
         wsServiceRef.current.sendMessage({ query: text });
       } else {
         throw new Error("WebSocket is not connected");
@@ -132,7 +301,7 @@ export function ChatInterface() {
       const assistant: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `I'm sorry, I'm having trouble connecting to the ocean data analysis system. Please check your connection and try again.`,
+        content: `❌ **Connection Error**\n\nI'm having trouble connecting to the ocean data analysis system. Please check your connection and try again.\n\n**Error Details:** ${error}`,
         timestamp: new Date().toISOString(),
       };
       setMessages((m) => [...m, assistant]);
@@ -162,9 +331,10 @@ export function ChatInterface() {
 
   const LoadingIndicator = ({ stage }: { stage?: string }) => {
     const stageText = {
-      searching: "Searching ocean databases...",
-      analyzing: "Analyzing oceanographic data...",
-      generating: "Generating insights..."
+      analyzing: "Analyzing your ocean data query...",
+      searching: "Generating database query...",
+      generating: "Processing oceanographic data...",
+      processing: "Finalizing results..."
     };
 
     return (
