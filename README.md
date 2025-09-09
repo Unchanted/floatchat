@@ -1,31 +1,91 @@
-# shadcn/ui monorepo template
+# 🚀 SIH2025 Monorepo
 
-This template is for creating a monorepo with shadcn/ui.
+This repo is a **monorepo** containing:
 
-## Usage
+- **Frontend** → Next.js + Tailwind + shadcn/ui
+- **Backend** → FastAPI (Python, managed with `uv`)
+
+It uses **pnpm** workspaces + **turbo** for frontend tooling, and **concurrently** for running frontend & backend together.
+
+---
+
+## 🛠 Prerequisites
+
+Make sure you have installed:
+
+- [Node.js](https://nodejs.org/) ≥ 20
+- [pnpm](https://pnpm.io/) (workspace package manager)
+- [uv](https://docs.astral.sh/uv/) (Python package/dependency manager)
+- Python ≥ 3.11
+
+---
+
+## ⚡ Setup
+
+Clone the repo and run:
 
 ```bash
-pnpm dlx shadcn@latest init
+# Install Node.js dependencies (frontend + tooling)
+pnpm install
+
+# Install backend dependencies
+cd apps/backend
+uv sync
+cd ../..
 ```
 
-## Adding components
-
-To add components to your app, run the following command at the root of your `web` app:
+Or run the shortcut:
 
 ```bash
-pnpm dlx shadcn@latest add button -c apps/web
+pnpm run setup
 ```
 
-This will place the ui components in the `packages/ui/src/components` directory.
+---
 
-## Tailwind
+## ▶️ Development
 
-Your `tailwind.config.ts` and `globals.css` are already set up to use the components from the `ui` package.
+Run frontend + backend together:
 
-## Using components
+```bash
+pnpm dev
+```
 
-To use the components in your app, import them from the `ui` package.
+- Frontend → [http://localhost:3000](http://localhost:3000)
+- Backend → [http://localhost:8000](http://localhost:8000)
+
+Run separately:
+
+```bash
+pnpm dev:frontend   # Start Next.js frontend
+pnpm dev:backend    # Start FastAPI backend
+```
+
+---
+
+## 📦 Adding shadcn/ui components
+
+To add a new component to the frontend app:
+
+```bash
+pnpm dlx shadcn@latest add button -c apps/frontend
+```
+
+Components will be placed in `apps/frontend/components/ui`.
+
+---
+
+## 🎨 Tailwind
+
+The `tailwind.config.ts` and `globals.css` are already set up for shadcn/ui.
+
+---
+
+## ✅ Using Components
+
+Import components directly in your frontend code:
 
 ```tsx
-import { Button } from "@workspace/ui/components/button"
+import { Button } from "@/components/ui/button";
 ```
+
+---

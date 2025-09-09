@@ -3,14 +3,18 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "setup": "pnpm install && cd apps/backend && uv sync && cd ../..",
     "build": "turbo build",
-    "dev": "turbo dev",
+    "dev": "turbo run dev --parallel",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:backend": "cd apps/backend && uv run uvicorn backend.main:app --reload --port 8000",
     "lint": "turbo lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "concurrently": "^9.2.1",
     "prettier": "^3.6.2",
     "turbo": "^2.5.5",
     "typescript": "5.7.3"
