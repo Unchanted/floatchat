@@ -23,6 +23,10 @@ export class WebSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // 1 second
+  // Store callbacks set before a connection exists
+  private messageCallback?: (data: WebSocketResponse) => void;
+  private errorCallback?: (error: Event) => void;
+  private closeCallback?: (event: CloseEvent) => void;
 
   constructor(url: string = "ws://localhost:8000/ws") {
     this.url = url;
@@ -41,13 +45,37 @@ export class WebSocketService {
 
         this.socket.onerror = (error) => {
           console.error("WebSocket error:", error);
-          reject(error);
+          // If a user-provided error handler exists, call it
+          if (this.errorCallback) {
+            this.errorCallback(error);
+          }
+          // Reject initial connection attempt errors
+          if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
+            reject(error);
+          }
         };
 
         this.socket.onclose = (event) => {
           console.log("WebSocket closed:", event.code, event.reason);
+          // If a user-provided close handler exists, call it
+          if (this.closeCallback) {
+            this.closeCallback(event);
+          }
           this.handleReconnect();
         };
+
+        // Attach message handler if one was set before connect()
+        if (this.messageCallback) {
+          this.socket.onmessage = (event) => {
+            try {
+              const data: WebSocketResponse = JSON.parse(event.data);
+              console.log(event.data);
+              this.messageCallback!(data);
+            } catch (error) {
+              console.error("Error parsing WebSocket message:", error);
+            }
+          };
+        }
       } catch (error) {
         console.error("Failed to create WebSocket connection:", error);
         reject(error);
@@ -82,6 +110,9 @@ export class WebSocketService {
   }
 
   onMessage(callback: (data: WebSocketResponse) => void): void {
+    // Save callback regardless of socket state
+    this.messageCallback = callback;
+    // If already connected, attach immediately
     if (this.socket) {
       this.socket.onmessage = (event) => {
         try {
@@ -96,12 +127,14 @@ export class WebSocketService {
   }
 
   onError(callback: (error: Event) => void): void {
+    this.errorCallback = callback;
     if (this.socket) {
       this.socket.onerror = callback;
     }
   }
 
   onClose(callback: (event: CloseEvent) => void): void {
+    this.closeCallback = callback;
     if (this.socket) {
       this.socket.onclose = callback;
     }

@@ -18,6 +18,9 @@ export interface Message {
   content: string;
   timestamp: string;
   sources?: Array<{ title: string; url: string }>;
+  tableData?: Array<Record<string, any>>;
+  fullTableData?: Array<Record<string, any>>;
+  queryMeta?: any;
 }
 
 interface LoadingState {
@@ -45,6 +48,7 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [activeTab, setActiveTab] = useState<'answer' | 'sources' | 'graph'>('answer');
   const wsServiceRef = useRef<WebSocketService | null>(null);
   const lastSentUserMessageIdRef = useRef<string | null>(null);
 
@@ -145,11 +149,42 @@ export function ChatInterface() {
                 
               case "result":
                 console.log("📋 Stage: Final result received");
+                const resultPayload = data.result;
+                // Prefer single summary table if present
+                let tableData: Array<Record<string, any>> | undefined =
+                  resultPayload &&
+                  Array.isArray(resultPayload.summary) &&
+                  resultPayload.summary.length > 0 &&
+                  typeof resultPayload.summary[0] === 'object'
+                    ? (resultPayload.summary as Array<Record<string, any>>)
+                    : undefined;
+
+                // Otherwise, if summaries array exists (multi-point), pick the first non-empty summary
+                if (!tableData && Array.isArray(resultPayload?.summaries)) {
+                  const firstWithData = resultPayload.summaries.find((s: any) => Array.isArray(s?.summary) && s.summary.length > 0 && typeof s.summary[0] === 'object');
+                  if (firstWithData) {
+                    tableData = firstWithData.summary as Array<Record<string, any>>;
+                  }
+                }
+
                 const assistant: Message = {
                   id: crypto.randomUUID(),
                   role: "assistant",
-                  content: formatResultForDisplay(data.result),
+                  content: formatResultForDisplay(resultPayload),
                   timestamp: new Date().toISOString(),
+                  tableData,
+                  fullTableData: (() => {
+                    // If backend included a full_summary, surface it for toggle
+                    if (resultPayload && Array.isArray(resultPayload.full_summary)) {
+                      return resultPayload.full_summary as Array<Record<string, any>>;
+                    }
+                    if (Array.isArray(resultPayload?.summaries)) {
+                      const firstWithFull = resultPayload.summaries.find((s: any) => Array.isArray(s?.full_summary));
+                      if (firstWithFull) return firstWithFull.full_summary as Array<Record<string, any>>;
+                    }
+                    return undefined;
+                  })(),
+                  queryMeta: (data as any).query_meta,
                   sources: [
                     { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
                     { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
@@ -253,6 +288,9 @@ export function ChatInterface() {
         await wsServiceRef.current.connect();
         console.log("✅ WebSocket connected successfully");
         setConnectionStatus('connected');
+        
+        // Ensure loading state is reset on connection
+        setLoadingState({ isLoading: false });
       } catch (error) {
         console.group("❌ WebSocket Initialization Failed");
         console.error("Error:", error);
@@ -281,6 +319,14 @@ export function ChatInterface() {
     setMessages((m) => [...m, userMsg]);
     lastSentUserMessageIdRef.current = userMsg.id;
     setLoadingState({ isLoading: true, stage: "analyzing" });
+    setActiveTab('answer'); // Reset to answer tab for new queries
+    
+    // Ensure connection status is connected before sending
+    if (connectionStatus !== 'connected') {
+      console.warn('Connection status is not connected:', connectionStatus);
+      setLoadingState({ isLoading: false });
+      return;
+    }
 
     try {
       if (wsServiceRef.current && wsServiceRef.current.isConnected()) {
@@ -308,7 +354,7 @@ export function ChatInterface() {
     }
   };
 
-  // After messages update, if the last added message was from the user, snap it to the top
+  // After messages update, if the last added message was from the user, scroll to that message
   useEffect(() => {
     if (!lastSentUserMessageIdRef.current) return;
     const messageId = lastSentUserMessageIdRef.current;
@@ -319,15 +365,37 @@ export function ChatInterface() {
     const target = document.getElementById(`msg-${messageId}`);
 
     if (viewport && target) {
+      // Scroll to the latest user message (not the very top)
       const viewportRect = viewport.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
       const top = targetRect.top - viewportRect.top + viewport.scrollTop;
-      viewport.scrollTo({ top, behavior: "auto" });
+      viewport.scrollTo({ top, behavior: "smooth" });
     }
 
     // reset once handled
     lastSentUserMessageIdRef.current = null;
   }, [messages.length]);
+
+  // Also scroll to the latest assistant response when it comes in
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+      const latestMessage = messages[messages.length - 1];
+      const viewport = document.querySelector(
+        "#chat-scroll-area [data-slot=\"scroll-area-viewport\"]"
+      ) as HTMLElement | null;
+      const target = document.getElementById(`msg-${latestMessage.id}`);
+
+      if (viewport && target) {
+        // Small delay to ensure the message is rendered
+        setTimeout(() => {
+          const viewportRect = viewport.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+          const top = targetRect.top - viewportRect.top + viewport.scrollTop;
+          viewport.scrollTo({ top, behavior: "smooth" });
+        }, 100);
+      }
+    }
+  }, [messages]);
 
   const LoadingIndicator = ({ stage }: { stage?: string }) => {
     const stageText = {
@@ -382,7 +450,7 @@ export function ChatInterface() {
             <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
               {messages.map((msg, index) => (
                 <div key={msg.id} id={`msg-${msg.id}`}>
-                  <ChatMessage message={msg} />
+                  <ChatMessage message={msg} activeTab={activeTab} setActiveTab={setActiveTab} />
                   {index < messages.length - 1 && (
                     <Separator className="my-8 opacity-50" />
                   )}
@@ -402,6 +470,13 @@ export function ChatInterface() {
               onSend={sendMessage} 
               disabled={loadingState.isLoading || connectionStatus !== 'connected'} 
             />
+            {/* Debug info - remove in production */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="text-xs text-muted-foreground mt-2">
+                Debug: Loading: {loadingState.isLoading ? 'true' : 'false'}, 
+                Connection: {connectionStatus}
+              </div>
+            )}
           </div>
         </div>
       </div>

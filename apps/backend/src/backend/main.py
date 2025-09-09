@@ -3,6 +3,8 @@ import json
 import asyncio
 import traceback
 from typing import Any, Dict, List, Optional
+from fsspec.exceptions import FSTimeoutError
+import aiohttp
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
@@ -17,6 +19,8 @@ from google.genai import types
 from argopy import DataFetcher as ArgoDataFetcher
 import calendar
 import datetime
+import math
+import math
 
 app = FastAPI()
 
@@ -30,7 +34,8 @@ select_region_function = {
         "Never respond with plain text. "
         "If the user mentions a date or range, include it as date_min/date_max (YYYY-MM). "
         "If no date is mentioned, leave them empty and the backend will default to last month. "
-        "Choose either 'box' (bounding box) or 'points' (list of coordinates)."
+        "Choose either 'box' (bounding box) or 'points' (list of coordinates). "
+        "Also select which variables are relevant to the user's request (temperature, salinity, pressure)."
     ),
     "parameters": {
         "type": "object",
@@ -38,7 +43,15 @@ select_region_function = {
             "mode": {
                 "type": "string",
                 "enum": ["box", "points"],
-                "description": "Return either a single bounding box (box) or a list of point coordinates (points)."
+                "description": "Return either a single bounding box (box) or a list of point coordinates (points).",
+            },
+            "variables": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": ["temperature", "salinity", "pressure"],
+                },
+                "description": "Which ocean variables the user is asking for. Choose 1-2 max.",
             },
             "box": {
                 "type": "object",
@@ -46,9 +59,9 @@ select_region_function = {
                     "lon_min": {"type": "number"},
                     "lon_max": {"type": "number"},
                     "lat_min": {"type": "number"},
-                    "lat_max": {"type": "number"}
+                    "lat_max": {"type": "number"},
                 },
-                "required": ["lon_min", "lon_max", "lat_min", "lat_max"]
+                "required": ["lon_min", "lon_max", "lat_min", "lat_max"],
             },
             "points": {
                 "type": "array",
@@ -56,24 +69,25 @@ select_region_function = {
                     "type": "object",
                     "properties": {
                         "lat": {"type": "number"},
-                        "lon": {"type": "number"}
+                        "lon": {"type": "number"},
                     },
-                    "required": ["lat", "lon"]
+                    "required": ["lat", "lon"],
                 },
-                "description": "List of (lat, lon) points to fetch individually."
+                "description": "List of (lat, lon) points to fetch individually.",
             },
             "date_min": {
                 "type": "string",
-                "description": "Start date in YYYY-MM format (optional)."
+                "description": "Start date in YYYY-MM format (optional).",
             },
             "date_max": {
                 "type": "string",
-                "description": "End date in YYYY-MM format (optional)."
-            }
+                "description": "End date in YYYY-MM format (optional).",
+            },
         },
-        "required": ["mode"]
-    }
+        "required": ["mode"],
+    },
 }
+
 
 # --- Helper: prepare Google client ---
 def normalize_date_range(date_min: Optional[str], date_max: Optional[str]):
@@ -106,13 +120,15 @@ def get_default_date_range():
     last_month_start = last_month_end.replace(day=1)
     return last_month_start.isoformat(), last_month_end.isoformat()
 
+
 def create_genai_client() -> genai.Client:
-    api_key = "AIzaSyCNmljgcLf9orNwvlPMgeITA0eYp5ZyvKc"
+    api_key = "AIzaSyD-7cXQPrKkYIJIsnnlTjXeo2drONhmIU0"
     if not api_key:
         raise RuntimeError("Environment variable GOOGLE_API_KEY is required")
     client = genai.Client(api_key=api_key)
     # Note: some genai SDKs accept api_key as Client(api_key=...), adapt if needed.
     return client
+
 
 # --- Helper: call Gemini with function declarations ---
 def gemini_select_region(query: str) -> Dict[str, Any]:
@@ -137,33 +153,83 @@ def gemini_select_region(query: str) -> Dict[str, Any]:
     part0 = candidate.content.parts[0]
 
     if part0.function_call:
-        return {"function_call": {
-            "name": part0.function_call.name,
-            "args": json.loads(part0.function_call.args) if isinstance(part0.function_call.args, str) else part0.function_call.args
-        }}
+        return {
+            "function_call": {
+                "name": part0.function_call.name,
+                "args": json.loads(part0.function_call.args)
+                if isinstance(part0.function_call.args, str)
+                else part0.function_call.args,
+            }
+        }
     else:
         # fallback: return plain text
         return {"text": response.text}
 
+
 # --- Helper: fetch data from Argopy for a bounding box or points ---
-def fetch_argopy_for_box(box: Dict[str, float], date_min: Optional[str] = None, date_max: Optional[str] = None) -> Dict[str, Any]:
+def fetch_argopy_for_box(
+    box: Dict[str, float],
+    date_min: Optional[str] = None,
+    date_max: Optional[str] = None,
+) -> Dict[str, Any]:
     date_min, date_max = normalize_date_range(date_min, date_max)
 
     region = [
-        box["lon_min"], box["lon_max"],
-        box["lat_min"], box["lat_max"],
-        0, 2000,
+        box["lon_min"],
+        box["lon_max"],
+        box["lat_min"],
+        box["lat_max"],
+        0,
+        2000,
         date_min,
-        date_max
+        date_max,
     ]
 
     argo = ArgoDataFetcher()
     ds = argo.region(region).to_dataframe()
-    return {"summary": ds}
+    # Convert to JSON-serializable structure (limit sample size) and sanitize
+    try:
+        total_count = len(ds)
+    except Exception:
+        total_count = None
+
+    def sanitize(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        if isinstance(value, (int, str, bool)):
+            return value
+        if isinstance(value, (datetime.date, datetime.datetime)):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        if isinstance(value, dict):
+            return {k: sanitize(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [sanitize(v) for v in value]
+        try:
+            if hasattr(value, "item"):
+                return sanitize(value.item())
+        except Exception:
+            pass
+        return str(value)
+
+    try:
+        raw_records = ds.head(50).to_dict(orient="records")
+        sample_records = sanitize(raw_records)
+    except Exception:
+        # Fallback: stringify if conversion fails
+        sample_records = [str(ds)]
+    return {"summary": sample_records, "total": total_count}
 
 
-
-def fetch_argopy_for_points(points: List[Dict[str, float]], date_min: Optional[str] = None, date_max: Optional[str] = None) -> Dict[str, Any]:
+def fetch_argopy_for_points(
+    points: List[Dict[str, float]],
+    date_min: Optional[str] = None,
+    date_max: Optional[str] = None,
+) -> Dict[str, Any]:
     combined = {"summaries": []}
     for p in points:
         box = {
@@ -174,10 +240,13 @@ def fetch_argopy_for_points(points: List[Dict[str, float]], date_min: Optional[s
         }
         try:
             res = fetch_argopy_for_box(box, date_min, date_max)
-            combined["summaries"].append({"point": p, "summary": res.get("summary")})
+            combined["summaries"].append(
+                {"point": p, "summary": res.get("summary"), "total": res.get("total")}
+            )
         except Exception as exc:
             combined["summaries"].append({"point": p, "error": str(exc)})
     return combined
+
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
@@ -190,7 +259,9 @@ async def websocket_endpoint(ws: WebSocket):
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:
-                await ws.send_text(json.dumps({"error": "Invalid JSON. Send {\"query\": \"...\"}"}))
+                await ws.send_text(
+                    json.dumps({"error": 'Invalid JSON. Send {"query": "..."}'})
+                )
                 continue
 
             query = payload.get("query")
@@ -199,13 +270,21 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
 
             # Stage 1: Analyzing
-            await ws.send_text(json.dumps({"stage": "analyzing", "message": "🔎 Analyzing your query"}))
+            await ws.send_text(
+                json.dumps({"stage": "analyzing", "message": "🔎 Analyzing your query"})
+            )
 
             loop = asyncio.get_running_loop()
             try:
-                gemini_result = await loop.run_in_executor(None, gemini_select_region, query)
+                gemini_result = await loop.run_in_executor(
+                    None, gemini_select_region, query
+                )
             except Exception as exc:
-                await ws.send_text(json.dumps({"stage": "error", "message": f"Gemini call failed: {exc}"}))
+                await ws.send_text(
+                    json.dumps(
+                        {"stage": "error", "message": f"Gemini call failed: {exc}"}
+                    )
+                )
                 continue
 
             if "function_call" in gemini_result:
@@ -213,61 +292,237 @@ async def websocket_endpoint(ws: WebSocket):
 
                 # Stage 2: Generating SQL
                 print(f"Generating SQL for function call: {fc}")
-                await ws.send_text(json.dumps({"stage": "sql_generation", "message": "🛠 Generating SQL for your request"}))
+                await ws.send_text(
+                    json.dumps(
+                        {
+                            "stage": "sql_generation",
+                            "message": "🛠 Generating SQL for your request",
+                        }
+                    )
+                )
 
                 args = fc.get("args", {})
                 if fc["name"] == "select_region":
                     mode = args.get("mode")
                     date_min = args.get("date_min")
                     date_max = args.get("date_max")
+                    variables = args.get("variables", [])
+
+                    # Build query meta (normalized date range) to send back to frontend
+                    nm_start, nm_end = normalize_date_range(date_min, date_max)
+                    query_meta = {
+                        "mode": mode,
+                        "date_min_provided": date_min,
+                        "date_max_provided": date_max,
+                        "date_start": nm_start,
+                        "date_end": nm_end,
+                        "selected_variables": variables,
+                    }
 
                     try:
                         # Stage 3: Fetching from DB
-                        print(f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}")
-                        await ws.send_text(json.dumps({"stage": "db_fetch", "message": "📡 Fetching data from PostgreSQL"}))
+                        print(
+                            f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}"
+                        )
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "stage": "db_fetch",
+                                    "message": "📡 Fetching data from PostgreSQL",
+                                }
+                            )
+                        )
 
                         if mode == "box":
                             box = args.get("box")
                             if not box:
-                                raise ValueError("Gemini returned mode 'box' but no box provided")
-                            raw_result = await loop.run_in_executor(None, fetch_argopy_for_box, box, date_min, date_max)
+                                raise ValueError(
+                                    "Gemini returned mode 'box' but no box provided"
+                                )
+                            raw_result = await loop.run_in_executor(
+                                None, fetch_argopy_for_box, box, date_min, date_max
+                            )
+                            query_meta["box"] = box
 
                         elif mode == "points":
                             points = args.get("points", [])
                             if not points:
-                                raise ValueError("Gemini returned mode 'points' but no points provided")
-                            raw_result = await loop.run_in_executor(None, fetch_argopy_for_points, points, date_min, date_max)
+                                raise ValueError(
+                                    "Gemini returned mode 'points' but no points provided"
+                                )
+                            raw_result = await loop.run_in_executor(
+                                None,
+                                fetch_argopy_for_points,
+                                points,
+                                date_min,
+                                date_max,
+                            )
+                            query_meta["points"] = points
 
                         else:
-                            await ws.send_text(json.dumps({"stage": "error", "message": f"Unknown mode from Gemini: {mode}"}))
+                            await ws.send_text(
+                                json.dumps(
+                                    {
+                                        "stage": "error",
+                                        "message": f"Unknown mode from Gemini: {mode}",
+                                    }
+                                )
+                            )
                             continue
 
                         # Stage 4: Processing data
-                        print(f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}")
-                        await ws.send_text(json.dumps({"stage": "processing", "message": "⚙️ Processing data"}))
+                        print(
+                            f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}"
+                        )
+                        await ws.send_text(
+                            json.dumps(
+                                {"stage": "processing", "message": "⚙️ Processing data"}
+                            )
+                        )
                         # result = process_data(raw_result)  # wrap your pandas/cleaning logic here
-                        result = raw_result 
+                        result = raw_result
+
+                        # Optional filtering to requested variables, keep full data for toggle
+                        def pick_columns(records, variables_list):
+                            if not isinstance(records, list) or not records:
+                                return records
+                            present_keys = set(records[0].keys())
+
+                            def find_key(candidates):
+                                for c in candidates:
+                                    if c in present_keys:
+                                        return c
+                                    up = c.upper()
+                                    if up in present_keys:
+                                        return up
+                                    ti = c.title()
+                                    if ti in present_keys:
+                                        return ti
+                                return None
+
+                            essential_candidates = [
+                                ["LATITUDE", "latitude", "Lat"],
+                                ["LONGITUDE", "longitude", "Lon"],
+                                ["TIME", "time", "Date", "date"],
+                            ]
+                            essential = [
+                                fk
+                                for group in essential_candidates
+                                for fk in ([find_key(group)] if find_key(group) else [])
+                            ]
+                            var_map = {
+                                "temperature": ["TEMP", "temperature", "temp"],
+                                "salinity": ["PSAL", "salinity", "sal"],
+                                "pressure": ["PRES", "pressure", "pres"],
+                            }
+                            selected_keys = []
+                            for v in variables_list or []:
+                                found = find_key(var_map.get(v, []))
+                                if found and found not in selected_keys:
+                                    selected_keys.append(found)
+                            if not selected_keys:
+                                return records
+                            keep = set(selected_keys + essential)
+                            return [
+                                {k: row.get(k) for k in keep if k in row}
+                                for row in records
+                            ]
+
+                        if variables:
+                            if isinstance(result, dict) and isinstance(
+                                result.get("summary"), list
+                            ):
+                                full_summary = result["summary"]
+                                filtered_summary = pick_columns(full_summary, variables)
+                                result = {
+                                    **result,
+                                    "full_summary": full_summary,
+                                    "summary": filtered_summary,
+                                }
+                            elif isinstance(result, dict) and isinstance(
+                                result.get("summaries"), list
+                            ):
+                                new_summaries = []
+                                for item in result["summaries"]:
+                                    if isinstance(item, dict) and isinstance(
+                                        item.get("summary"), list
+                                    ):
+                                        fs = item["summary"]
+                                        new_summaries.append(
+                                            {
+                                                **item,
+                                                "full_summary": fs,
+                                                "summary": pick_columns(fs, variables),
+                                            }
+                                        )
+                                    else:
+                                        new_summaries.append(item)
+                                result = {**result, "summaries": new_summaries}
 
                         # Stage 5: Completed
-                        await ws.send_text(json.dumps({"stage": "completed", "message": "✅ Data ready"}))
-                        await ws.send_text(json.dumps({"stage": "result", "result": result}, default=str))
+                        await ws.send_text(
+                            json.dumps(
+                                {"stage": "completed", "message": "✅ Data ready"}
+                            )
+                        )
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "stage": "result",
+                                    "result": result,
+                                    "query_meta": query_meta,
+                                },
+                                default=str,
+                                allow_nan=False,
+                            )
+                        )
                         print(f"Sent result: {result}")
 
+                    except (
+                        FSTimeoutError,
+                        asyncio.TimeoutError,
+                        aiohttp.ClientError,
+                    ) as exc:
+                        # Soft-fail on network timeouts: return a friendly result instead of an error stage
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "stage": "result",
+                                    "result": "The ocean data source timed out while fetching results. Please try a smaller date range or a narrower region, then try again.",
+                                    "query_meta": query_meta,
+                                },
+                                allow_nan=False,
+                            )
+                        )
                     except Exception as exc:
                         tb = traceback.format_exc()
-                        await ws.send_text(json.dumps({
-                            "stage": "error",
-                            "message": f"Error during fetch/processing: {str(exc)}",
-                            "traceback": tb
-                        }))
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "stage": "error",
+                                    "message": f"Error during fetch/processing: {str(exc)}",
+                                    "traceback": tb,
+                                }
+                            )
+                        )
                 else:
-                    await ws.send_text(json.dumps({"stage": "error", "message": "Unknown function requested by Gemini."}))
+                    await ws.send_text(
+                        json.dumps(
+                            {
+                                "stage": "error",
+                                "message": "Unknown function requested by Gemini.",
+                            }
+                        )
+                    )
             else:
                 text = gemini_result.get("text", "")
-                await ws.send_text(json.dumps({"stage": "no_function_call", "message": text}))
+                await ws.send_text(
+                    json.dumps({"stage": "no_function_call", "message": text})
+                )
 
     except WebSocketDisconnect:
         print("Client disconnected")
+
 
 # --- Simple index for manual testing ---
 @app.get("/")
