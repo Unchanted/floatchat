@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Card } from "../../../../../packages/ui/src/components/card";
 import {
   Avatar,
@@ -83,9 +83,12 @@ export function ChatMessage({
       const lonMin = Number(b.lon_min);
       const lonMax = Number(b.lon_max);
       if ([latMin, latMax, lonMin, lonMax].every((v) => !Number.isNaN(v))) {
-        lines.push(
-          `Area: ${formatLat(latMin)} – ${formatLat(latMax)}, ${formatLon(lonMin)} – ${formatLon(lonMax)}`
-        );
+        const areaText = `Area: ${formatLat(latMin)} – ${formatLat(latMax)}, ${formatLon(lonMin)} – ${formatLon(lonMax)}`;
+        if (meta.expanded_search) {
+          lines.push(`${areaText} (expanded search)`);
+        } else {
+          lines.push(areaText);
+        }
       }
     } else if (Array.isArray(meta?.points) && meta.points.length > 0) {
       const pts = meta.points as Array<{ lat: number; lon: number }>;
@@ -192,17 +195,41 @@ export function ChatMessage({
                 a: ({ node, ...props }) => (
                   <a {...props} target="_blank" rel="noreferrer" />
                 ),
-                code: ({ inline, className, children, ...props }: any) => {
-                  return inline ? (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  ) : (
-                    <pre className="rounded-md bg-muted p-3 overflow-x-auto">
-                      <code className={className} {...props}>{children}</code>
-                    </pre>
-                  );
-                },
+           p: ({ children, ...props }: any) => {
+             // Check if this paragraph contains a code block (pre element)
+             const hasCodeBlock = React.Children.toArray(children).some((child: any) => 
+               child && typeof child === 'object' && child.type === 'pre'
+             );
+             
+             if (hasCodeBlock) {
+               // If it contains a code block, don't wrap it in p
+               return <>{children}</>;
+             }
+             return <p className="leading-relaxed" {...props}>{children}</p>;
+           },
+           pre: ({ children, ...props }: any) => {
+             // Custom pre component to ensure proper structure
+             return (
+               <pre className="rounded-md bg-muted p-3 overflow-x-auto text-sm my-4" {...props}>
+                 {children}
+               </pre>
+             );
+           },
+           code: ({ inline, className, children, ...props }: any) => {
+             if (inline) {
+               return (
+                 <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm`} {...props}>
+                   {children}
+                 </code>
+               );
+             }
+             // For block code, just return the code element (pre will be handled by pre component)
+             return (
+               <code className="text-sm" {...props}>
+                 {children}
+               </code>
+             );
+           },
               }}
             >
               {message.content}
@@ -211,11 +238,14 @@ export function ChatMessage({
 
           {/* Query meta */}
           {message.queryMeta && (
-            <div className="text-xs text-muted-foreground border rounded-md p-3 bg-muted/30">
-              <div className="font-medium text-foreground mb-1">What I looked for</div>
-              <ul className="list-disc pl-5 space-y-1">
+            <div className="text-sm border rounded-lg p-4 bg-muted/20">
+              <div className="font-semibold text-foreground mb-3">What I looked for</div>
+              <ul className="space-y-2">
                 {buildFriendlyQuerySummary(message.queryMeta).map((line, i) => (
-                  <li key={i}>{line}</li>
+                  <li key={i} className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0 mt-1.5"></div>
+                    <span className="text-muted-foreground">{line}</span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -223,30 +253,36 @@ export function ChatMessage({
 
           {/* Variable explanations */}
           {Array.isArray(message.tableData) && message.tableData.length > 0 && (
-            <div className="text-xs text-muted-foreground border rounded-md p-3 bg-muted/30">
-              <div className="font-medium text-foreground mb-1">Variable guide</div>
-              <ul className="list-disc pl-5 space-y-1">
+            <div className="text-sm border rounded-lg p-4 bg-muted/20">
+              <div className="font-semibold text-foreground mb-3">Variable Guide</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {Object.keys(message.tableData[0]).slice(0, 12).map((key) => (
-                  <li key={key}>
-                    <span className="text-foreground font-medium">{key}</span>: {explainVariable(key)}
-                  </li>
+                  <div key={key} className="flex items-start gap-2">
+                    <span className="inline-flex items-center px-2 py-1 rounded-md bg-muted text-xs font-mono font-medium text-foreground min-w-0 flex-shrink-0">
+                      {key}
+                    </span>
+                    <span className="text-muted-foreground text-xs leading-relaxed">
+                      {explainVariable(key)}
+                    </span>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
           {Array.isArray(message.tableData) && message.tableData.length > 0 && (
-            <div className="mt-2">
+            <div className="mt-4">
               {(() => {
                 // Enable toggle if we detect full_summary in message content structure
                 const hasFull = !!(message as any)?.queryMeta; // meta always present
                 return (
-                  <div className="flex items-center justify-end mb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="font-semibold text-foreground">Data Results</div>
                     {hasFull && (
                       <Button
                         size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 rounded-md"
+                        variant="outline"
+                        className="h-8 px-3 rounded-md text-xs"
                         onClick={() => setShowFull((v) => !v)}
                       >
                         {showFull ? "Show filtered columns" : "Show all columns"}
@@ -262,17 +298,19 @@ export function ChatMessage({
                 const rows = dataset.slice(0, 50);
                 const columns = Object.keys(rows[0] || {});
                 return (
-                  <Table>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <Table>
                     <TableHeader>
-                      <TableRow>
+                      <TableRow className="bg-muted/50">
                         {columns.map((col) => (
-                          <TableHead key={col}>{col}</TableHead>
+                          <TableHead key={col} className="font-semibold text-foreground">{col}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rows.map((row, idx) => (
-                        <TableRow key={idx}>
+                        <TableRow key={idx} className="hover:bg-muted/30">
                           {columns.map((col) => {
                             const value = (row as Record<string, unknown>)[col];
                             const display =
@@ -281,7 +319,11 @@ export function ChatMessage({
                                 : typeof value === "object"
                                 ? JSON.stringify(value)
                                 : String(value);
-                            return <TableCell key={col}>{display}</TableCell>;
+                            return (
+                              <TableCell key={col} className="text-sm">
+                                {display}
+                              </TableCell>
+                            );
                           })}
                         </TableRow>
                       ))}
@@ -292,7 +334,9 @@ export function ChatMessage({
                         ? ` of ${dataset.length}`
                         : ""}
                     </TableCaption>
-                  </Table>
+                      </Table>
+                    </div>
+                  </div>
                 );
               })()}
             </div>

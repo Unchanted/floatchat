@@ -129,6 +129,83 @@ def create_genai_client() -> genai.Client:
     # Note: some genai SDKs accept api_key as Client(api_key=...), adapt if needed.
     return client
 
+# --- Helper: generate dynamic analysis using Gemini ---
+def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any]) -> str:
+    """Generate a dynamic analysis of the ocean data based on the user's query and results."""
+    client = create_genai_client()
+    
+    # Prepare data summary for Gemini
+    data_summary = ""
+    if data_result.get("summary"):
+        summary_data = data_result["summary"]
+        if isinstance(summary_data, list) and len(summary_data) > 0:
+            data_summary = f"Found {len(summary_data)} data points with columns: {list(summary_data[0].keys()) if summary_data[0] else 'none'}"
+        else:
+            data_summary = f"Found data with summary: {str(summary_data)[:200]}..."
+    elif data_result.get("summaries"):
+        summaries = data_result["summaries"]
+        successful = [s for s in summaries if not s.get("error")]
+        data_summary = f"Found data from {len(successful)} out of {len(summaries)} requested locations"
+    
+    # Create analysis prompt
+    analysis_prompt = f"""
+You are an ocean data analyst. A user asked: "{query}"
+
+Query details:
+- Mode: {query_meta.get('mode', 'unknown')}
+- Time period: {query_meta.get('date_start', 'N/A')} to {query_meta.get('date_end', 'N/A')}
+- Variables requested: {query_meta.get('selected_variables', [])}
+
+Data results:
+{data_summary}
+
+RESPONSE STYLE GUIDELINES:
+
+**IMPORTANT**: Always use rich Markdown formatting to make your response visually appealing and easy to read. Use **bold text**, bullet points, headers, and separators.
+
+1. **RESEARCH/ANALYSIS QUERIES** (when user asks "why", "how", "what does this mean", "explain", "analyze", "research", "study", "significance"):
+   - Use **## Key Findings** headers
+   - Include **bold** key terms and important values
+   - Use bullet points for multiple findings: • **Finding**: explanation
+   - Add horizontal separators (---) between sections
+   - Provide 2-3 well-formatted paragraphs with context
+   - Include background information about ocean processes
+   - Explain the significance of the findings
+   - Mention implications for climate/marine research
+
+2. **DATA REQUESTS** (when user asks "show me", "give me", "what is the", "temperature", "salinity", specific values):
+   - Use **bold** for key values and measurements
+   - Format as: **Temperature**: 25.2°C - 28.7°C
+   - Use bullet points for multiple data points
+   - Add **## Data Summary** header
+   - Keep it concise but visually formatted
+
+3. **GENERAL QUERIES** (mixed or unclear intent):
+   - Use **## Overview** header
+   - Include **bold** key findings
+   - Use bullet points for multiple points
+   - 1-2 well-formatted paragraphs with context
+
+**FORMATTING REQUIREMENTS**:
+- Always use **bold** for important values, measurements, and key terms
+- Use bullet points (•) for lists and multiple findings
+- Use ## headers for main sections
+- Use --- for visual separators between sections
+- Make the text visually appealing and scannable
+
+Choose the appropriate style based on the user's query, but ALWAYS include rich Markdown formatting.
+"""
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=analysis_prompt,
+        )
+        return response.text
+    except Exception as e:
+        # Fallback to basic analysis if Gemini fails
+        return f"## Data Summary\n\n• **Data Found**: Oceanographic measurements in your requested region\n• **Source**: **Argo autonomous floats**\n• **Use**: Climate research and marine studies\n\n---\n\nThis data provides valuable insights into ocean conditions for scientific research."
+
 
 # --- Helper: call Gemini with function declarations ---
 def gemini_select_region(query: str) -> Dict[str, Any]:
@@ -339,10 +416,32 @@ async def websocket_endpoint(ws: WebSocket):
                                 raise ValueError(
                                     "Gemini returned mode 'box' but no box provided"
                                 )
-                            raw_result = await loop.run_in_executor(
-                                None, fetch_argopy_for_box, box, date_min, date_max
-                            )
-                            query_meta["box"] = box
+                            
+                            # Try the original box first
+                            try:
+                                raw_result = await loop.run_in_executor(
+                                    None, fetch_argopy_for_box, box, date_min, date_max
+                                )
+                                query_meta["box"] = box
+                            except (FileNotFoundError, FSTimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
+                                # If original box fails, try with a broader area
+                                print(f"Original box failed, trying broader area...")
+                                broader_box = {
+                                    "lon_min": max(-180, box["lon_min"] - 2.0),
+                                    "lon_max": min(180, box["lon_max"] + 2.0),
+                                    "lat_min": max(-90, box["lat_min"] - 2.0),
+                                    "lat_max": min(90, box["lat_max"] + 2.0),
+                                }
+                                try:
+                                    raw_result = await loop.run_in_executor(
+                                        None, fetch_argopy_for_box, broader_box, date_min, date_max
+                                    )
+                                    query_meta["box"] = broader_box
+                                    query_meta["expanded_search"] = True
+                                    print(f"Successfully found data with broader search area")
+                                except Exception:
+                                    # Re-raise the original exception if broader search also fails
+                                    raise
 
                         elif mode == "points":
                             points = args.get("points", [])
@@ -459,12 +558,23 @@ async def websocket_endpoint(ws: WebSocket):
                                         new_summaries.append(item)
                                 result = {**result, "summaries": new_summaries}
 
-                        # Stage 5: Completed
+                        # Stage 5: Generate dynamic analysis
                         await ws.send_text(
                             json.dumps(
-                                {"stage": "completed", "message": "✅ Data ready"}
+                                {"stage": "completed", "message": "✅ Generating analysis"}
                             )
                         )
+                        
+                        # Generate dynamic analysis using Gemini
+                        try:
+                            dynamic_analysis = await loop.run_in_executor(
+                                None, generate_data_analysis, query, result, query_meta
+                            )
+                            result["dynamic_analysis"] = dynamic_analysis
+                        except Exception as e:
+                            print(f"Failed to generate dynamic analysis: {e}")
+                            result["dynamic_analysis"] = "Analysis generation failed, showing data results."
+                        
                         await ws.send_text(
                             json.dumps(
                                 {
@@ -482,13 +592,33 @@ async def websocket_endpoint(ws: WebSocket):
                         FSTimeoutError,
                         asyncio.TimeoutError,
                         aiohttp.ClientError,
+                        FileNotFoundError,
                     ) as exc:
-                        # Soft-fail on network timeouts: return a friendly result instead of an error stage
+                        # Soft-fail on network/data errors: return a friendly result instead of an error stage
+                        error_type = "timeout" if isinstance(exc, (FSTimeoutError, asyncio.TimeoutError)) else "no_data"
+                        
+                        if error_type == "no_data":
+                            friendly_message = (
+                                "## No Data Found\n\n"
+                                "No ocean data was found for your requested region and time period.\n\n"
+                                "**Possible reasons:**\n"
+                                "• Limited **Argo float** coverage in this region\n"
+                                "• No measurements available in the specified time period\n"
+                                "• Area is outside the main **Argo network**\n\n"
+                                "**Solution:** Try expanding your search area or using a different time period."
+                            )
+                        else:
+                            friendly_message = (
+                                "## Timeout Error\n\n"
+                                "The **ocean data source** timed out while fetching results.\n\n"
+                                "**Solution:** Try a smaller date range or a narrower region, then try again."
+                            )
+                        
                         await ws.send_text(
                             json.dumps(
                                 {
                                     "stage": "result",
-                                    "result": "The ocean data source timed out while fetching results. Please try a smaller date range or a narrower region, then try again.",
+                                    "result": friendly_message,
                                     "query_meta": query_meta,
                                 },
                                 allow_nan=False,
@@ -540,3 +670,4 @@ def index():
         </html>
         """
     )
+
