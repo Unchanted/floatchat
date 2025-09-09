@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "../../../../../packages/ui/src/components/button";
-
 import { Textarea } from "../../../../../packages/ui/src/components/textarea";
-import { Send } from "lucide-react";
+import { Send, Loader2 } from "lucide-react";
 
 export function ChatInput({
   onSend,
@@ -23,7 +22,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="relative">
+    <div className="flex gap-3 p-4 border border-border rounded-2xl bg-background shadow-sm hover:shadow-md transition-shadow">
       <Textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -33,18 +32,23 @@ export function ChatInput({
             submit();
           }
         }}
-        placeholder="Ask about ocean data…"
-        className="min-h-[60px] pr-12 resize-none text-base"
+        placeholder={disabled ? "Searching..." : "Ask about ocean data…"}
+        className="min-h-[44px] resize-none border-0 shadow-none focus-visible:ring-0 bg-transparent placeholder:text-muted-foreground text-base"
         disabled={disabled}
+        rows={1}
       />
       <Button
         type="button"
         size="sm"
-        className="absolute bottom-2 right-2"
         onClick={submit}
         disabled={!value.trim() || disabled}
+        className="shrink-0 h-11 w-11 rounded-xl"
       >
-        <Send className="h-4 w-4" />
+        {disabled ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Send className="h-4 w-4" />
+        )}
       </Button>
     </div>
   );

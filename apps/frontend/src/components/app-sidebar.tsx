@@ -1,73 +1,73 @@
 "use client";
 
+import React from "react";
+import { NewSidebar } from "./ui/new-sidebar";
+import type { SidebarLink } from "./ui/new-sidebar";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-} from "../../../../packages/ui/src/components/sidebar";
-import { Button } from "../../../../packages/ui/src/components/button";
-import { ScrollArea } from "../../../../packages/ui/src/components/scroll-area";
-import { Separator } from "../../../../packages/ui/src/components/separator";
-import { History, MessageSquare, Plus } from "lucide-react";
+  IconPlus,
+  IconHistory,
+  IconMessage,
+  IconSettings,
+  IconHelpCircle,
+  IconUser,
+  IconSearch,
+} from "@tabler/icons-react";
 
 const mockHistory = [
-  { id: "1", title: "Ocean temperature near equator", time: "2h ago" },
-  { id: "2", title: "Salinity profiles Arabian Sea", time: "1d ago" },
-  { id: "3", title: "Compare BGC parameters", time: "3d ago" },
+  { id: "1", title: "Ocean temperature variations near the equator during El Niño events", time: "2h ago" },
+  { id: "2", title: "Salinity profiles in the Arabian Sea monsoon season", time: "1d ago" },
+  { id: "3", title: "Compare BGC parameters between Pacific and Atlantic", time: "3d ago" },
+  { id: "4", title: "Chlorophyll concentrations in the Mediterranean", time: "5d ago" },
+  { id: "5", title: "Deep water temperature trends in the Southern Ocean", time: "1w ago" },
+  { id: "6", title: "Oxygen levels in coastal upwelling regions", time: "2w ago" },
+  { id: "7", title: "pH variations in coral reef environments", time: "3w ago" },
+  { id: "8", title: "Nutrient distribution patterns in the Arctic Ocean", time: "1m ago" },
 ];
 
 export function AppSidebar() {
-  return (
-    <Sidebar className="w-72">
-      <SidebarHeader className="p-4">
-        <Button className="w-full justify-start gap-2" size="lg">
-          <Plus className="h-4 w-4" />
-          New Search
-        </Button>
-      </SidebarHeader>
+  const sidebarLinks: SidebarLink[] = [
+    {
+      label: "New Search",
+      href: "#",
+      icon: <IconPlus className="w-5 h-5" />,
+      onClick: () => {
+        // Handle new search
+        console.log("New search clicked");
+      },
+    },
+    ...mockHistory.slice(0, 8).map((item) => ({
+      label: item.title,
+      href: "#",
+      icon: <IconMessage className="w-4 h-4" />,
+      onClick: () => {
+        console.log("History item clicked:", item.id);
+      },
+    })),
+  ];
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-4 text-sm flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Recent Searches
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <ScrollArea className="h-[calc(100vh-220px)] px-2">
-              <div className="space-y-1">
-                {mockHistory.map((item) => (
-                  <Button
-                    key={item.id}
-                    variant="ghost"
-                    className="w-full justify-start h-auto p-3 text-left"
-                  >
-                    <div className="flex items-start gap-2">
-                      <MessageSquare className="h-4 w-4 mt-0.5" />
-                      <div className="flex flex-col">
-                        <span className="text-sm line-clamp-2">
-                          {item.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.time}
-                        </span>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            </ScrollArea>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter className="p-4">
-        <Separator className="mb-3" />
-        <p className="text-xs text-muted-foreground">FloatChat • UI Preview</p>
-      </SidebarFooter>
-    </Sidebar>
+  const footerContent = (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+          <IconSettings className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
+          <span className="text-sm text-foreground">Settings</span>
+        </button>
+        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+          <IconHelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
+          <span className="text-sm text-foreground">Help & Support</span>
+        </button>
+        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+          <IconUser className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
+          <span className="text-sm text-foreground">Account</span>
+        </button>
+      </div>
+      <div className="pt-2 border-t border-border">
+        <p className="text-xs text-muted-foreground text-center">
+          FloatChat • Ocean AI Assistant
+        </p>
+      </div>
+    </div>
   );
+
+  return <NewSidebar variant="transparent" />;
 }
