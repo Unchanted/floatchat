@@ -8,6 +8,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { WelcomeScreen } from "./welcome-screen";
 import { Search, Sparkles, MoreHorizontal } from "lucide-react";
+import { WebSocketService, WebSocketResponse } from "../../lib/websocket";
 
 type Role = "user" | "assistant";
 
@@ -27,7 +28,71 @@ interface LoadingState {
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const wsServiceRef = useRef<WebSocketService | null>(null);
   const lastSentUserMessageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Initialize WebSocket connection
+    const initWebSocket = async () => {
+      try {
+        wsServiceRef.current = new WebSocketService();
+        
+        // Set up event handlers
+        wsServiceRef.current.onMessage((data: WebSocketResponse) => {
+          console.log("=== WEBSOCKET RESPONSE ===");
+          console.log("Full response object:", data);
+          console.log("Response type:", data.type);
+          console.log("Response content:", data.content);
+          console.log("Original query:", data.query);
+          console.log("Timestamp:", data.timestamp);
+          console.log("=========================");
+          
+          const assistant: Message = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: data.content,
+            timestamp: new Date().toISOString(),
+            sources: [
+              { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
+              { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
+              { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
+            ],
+          };
+          setMessages((m) => [...m, assistant]);
+          setLoadingState({ isLoading: false });
+        });
+
+        wsServiceRef.current.onError((error) => {
+          console.error("WebSocket error:", error);
+          setConnectionStatus('disconnected');
+          setLoadingState({ isLoading: false });
+        });
+
+        wsServiceRef.current.onClose((event) => {
+          console.log("WebSocket closed:", event.code, event.reason);
+          setConnectionStatus('disconnected');
+          setLoadingState({ isLoading: false });
+        });
+
+        // Connect to WebSocket
+        await wsServiceRef.current.connect();
+        setConnectionStatus('connected');
+      } catch (error) {
+        console.error("Failed to initialize WebSocket:", error);
+        setConnectionStatus('disconnected');
+      }
+    };
+
+    initWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      if (wsServiceRef.current) {
+        wsServiceRef.current.disconnect();
+      }
+    };
+  }, []);
 
   const sendMessage = async (text: string) => {
     const userMsg: Message = {
@@ -49,32 +114,29 @@ export function ChatInterface() {
       setLoadingState({ isLoading: true, stage: "generating" });
     }, 1600);
 
-    // Simulate backend; replace with real API later
-    setTimeout(() => {
+    try {
+      if (wsServiceRef.current && wsServiceRef.current.isConnected()) {
+        console.log("=== SENDING WEBSOCKET MESSAGE ===");
+        console.log("Query:", text);
+        console.log("Message object:", { query: text });
+        console.log("=================================");
+        wsServiceRef.current.sendMessage({ query: text });
+      } else {
+        throw new Error("WebSocket is not connected");
+      }
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      setLoadingState({ isLoading: false });
+      
+      // Fallback response if WebSocket fails
       const assistant: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `Based on the latest Argo float data, here's what I found regarding "${text}":
-
-The analysis reveals significant patterns in oceanographic measurements. The data shows temporal variations that correlate with seasonal cycles and regional characteristics.
-
-Key findings include:
-• Temperature profiles indicate thermocline depth variations
-• Salinity measurements show halocline structures
-• Biogeochemical parameters reveal productivity patterns
-• Spatial distribution highlights regional differences
-
-This analysis is based on quality-controlled Argo observations from the global array. The results provide insights into ocean dynamics and climate variability in the specified region.`,
+        content: `I'm sorry, I'm having trouble connecting to the ocean data analysis system. Please check your connection and try again.`,
         timestamp: new Date().toISOString(),
-        sources: [
-          { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
-          { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
-          { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
-        ],
       };
       setMessages((m) => [...m, assistant]);
-      setLoadingState({ isLoading: false });
-    }, 2400);
+    }
   };
 
   // After messages update, if the last added message was from the user, snap it to the top
@@ -119,8 +181,28 @@ This analysis is based on quality-controlled Argo observations from the global a
     );
   };
 
+  const ConnectionStatus = () => {
+    const statusConfig = {
+      connecting: { color: "bg-yellow-500", text: "Connecting to ocean data system..." },
+      connected: { color: "bg-green-500", text: "Connected to ocean data system" },
+      disconnected: { color: "bg-red-500", text: "Disconnected from ocean data system" }
+    };
+
+    const config = statusConfig[connectionStatus];
+
+    return (
+      <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 border-b border-border">
+        <div className={`w-2 h-2 rounded-full ${config.color} ${connectionStatus === 'connecting' ? 'animate-pulse' : ''}`}></div>
+        <span className="text-xs text-muted-foreground">{config.text}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full">
+      {/* Connection Status */}
+      <ConnectionStatus />
+      
       {/* Main Content Container */}
       <div className="flex-1 flex flex-col min-h-0">
         {messages.length === 0 ? (
@@ -146,7 +228,10 @@ This analysis is based on quality-controlled Argo observations from the global a
         {/* Input Area */}
         <div className="bg-transparent shrink-0">
           <div className="max-w-4xl mx-auto px-6 py-6">
-            <ChatInput onSend={sendMessage} disabled={loadingState.isLoading} />
+            <ChatInput 
+              onSend={sendMessage} 
+              disabled={loadingState.isLoading || connectionStatus !== 'connected'} 
+            />
           </div>
         </div>
       </div>
