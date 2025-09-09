@@ -21,11 +21,38 @@ import calendar
 import datetime
 import math
 import math
+import chromadb
+from chromadb.utils import embedding_functions
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from uuid import uuid4
 
 app = FastAPI()
 
 # --- Function declaration sent to Gemini ---
 # Gemini will select a bounding box or specific points and return them
+# sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+#     model_name="all-MiniLM-L6-v2"
+# )
+
+# # Create persistent vector store (remove the first one)
+# vector_store = Chroma(
+#     collection_name="ChatEmbeddings",
+#     embedding_function=sentence_transformer_ef,
+#     persist_directory="./chroma_db",
+# )
+
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
+
+# Create collection
+chat_embeddings_collection = chroma_client.get_or_create_collection(
+    name="ChatEmbeddings",
+    embedding_function=sentence_transformer_ef
+)
+
 select_region_function = {
     "name": "select_region",
     "description": (
@@ -87,6 +114,41 @@ select_region_function = {
         "required": ["mode"],
     },
 }
+
+# Helper function chroma 
+def search_similar_chats(query: str, n_results: int = 3, similarity_threshold: float = 0.8) -> List[Dict]:
+    """
+    Search for similar previous chats in ChromaDB and return relevant context
+    """
+    try:
+        # Query ChromaDB for similar queries
+        results = chat_embeddings_collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"]
+        )
+        
+        similar_chats = []
+        if results['documents'] and results['documents'][0]:
+            for i, (doc, metadata, distance) in enumerate(zip(
+                results['documents'][0], 
+                results['metadatas'][0], 
+                results['distances'][0]
+            )):
+                # Only include chats that are similar enough (lower distance = more similar)
+                if distance < similarity_threshold:
+                    similar_chats.append({
+                        "query": metadata.get("query", "Unknown query"),
+                        "response": doc[:500] + "..." if len(doc) > 500 else doc,  # Truncate long responses
+                        "timestamp": metadata.get("timestamp", "Unknown time"),
+                        "distance": distance,
+                        "query_meta": metadata.get("query_meta", "{}")
+                    })
+        
+        return similar_chats
+    except Exception as e:
+        print(f"Error searching similar chats: {e}")
+        return []
 
 
 # --- Helper: prepare Google client ---
@@ -208,8 +270,8 @@ Choose the appropriate style based on the user's query, but ALWAYS include rich 
 
 
 # --- Helper: call Gemini with function declarations ---
-def gemini_select_region(query: str) -> Dict[str, Any]:
-    """Send the query to Gemini and return the function_call if present.
+def gemini_select_region(query: str, similar_chats: List[Dict] = None, conversation_history: List[str] = None) -> Dict[str, Any]:
+    """Send the query to Gemini with context from similar previous chats and conversation history.
 
     Returns a dict with keys:
       - function_call: {name, args}   OR
@@ -217,12 +279,40 @@ def gemini_select_region(query: str) -> Dict[str, Any]:
     """
     client = create_genai_client()
 
+    # Build context from similar chats
+    context_prompt = ""
+    if similar_chats:
+        context_prompt += "\n\n**CONTEXT FROM PREVIOUS SIMILAR QUERIES:**\n"
+        for i, chat in enumerate(similar_chats, 1):
+            context_prompt += f"\n{i}. **Previous Query**: {chat['query']}\n"
+            context_prompt += f"   **Previous Response**: {chat['response']}\n"
+            context_prompt += f"   **Query Details**: {chat['query_meta']}\n"
+            context_prompt += f"   **Similarity**: {1 - chat['distance']:.2f}\n"
+        
+        context_prompt += "\nYou can use this context to better understand the user's request and provide more accurate geographical parameters.\n"
+
+    # Add conversation history context
+    if conversation_history and len(conversation_history) > 1:  # Only if there's previous conversation
+        context_prompt += "\n\n**CURRENT CONVERSATION HISTORY:**\n"
+        # Show last 5 queries to avoid overwhelming the context
+        recent_history = conversation_history[-6:-1]  # Exclude current query, show last 5
+        for i, prev_query in enumerate(recent_history, 1):
+            context_prompt += f"\n{i}. {prev_query}\n"
+        
+        context_prompt += "\nThis is the conversation history from this session. Use it to understand the context and continuation of the user's requests.\n"
+    
+    if context_prompt:
+        context_prompt += "---\n\n"
+
+    # Combine context with the current query
+    enhanced_query = f"{context_prompt}**CURRENT USER QUERY**: {query}"
+
     tools = types.Tool(function_declarations=[select_region_function])
     config = types.GenerateContentConfig(tools=[tools])
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=query,
+        contents=enhanced_query,
         config=config,
     )
 
@@ -241,6 +331,93 @@ def gemini_select_region(query: str) -> Dict[str, Any]:
     else:
         # fallback: return plain text
         return {"text": response.text}
+
+def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any], similar_chats: List[Dict] = None) -> str:
+    """Generate a dynamic analysis of the ocean data based on the user's query and results."""
+    client = create_genai_client()
+    
+    # Prepare data summary for Gemini
+    data_summary = ""
+    if data_result.get("summary"):
+        summary_data = data_result["summary"]
+        if isinstance(summary_data, list) and len(summary_data) > 0:
+            data_summary = f"Found {len(summary_data)} data points with columns: {list(summary_data[0].keys()) if summary_data[0] else 'none'}"
+        else:
+            data_summary = f"Found data with summary: {str(summary_data)[:200]}..."
+    elif data_result.get("summaries"):
+        summaries = data_result["summaries"]
+        successful = [s for s in summaries if not s.get("error")]
+        data_summary = f"Found data from {len(successful)} out of {len(summaries)} requested locations"
+    
+    # Build context from similar chats
+    context_section = ""
+    if similar_chats:
+        context_section = "\n**PREVIOUS SIMILAR ANALYSES:**\n"
+        for i, chat in enumerate(similar_chats, 1):
+            context_section += f"\n{i}. **Similar Query**: {chat['query']}\n"
+            context_section += f"   **Previous Analysis**: {chat['response'][:300]}...\n"
+        context_section += "\nUse these previous analyses as reference for style and insights, but focus on the current data.\n\n"
+
+    # Create analysis prompt
+    analysis_prompt = f"""
+You are an ocean data analyst. A user asked: "{query}"
+
+{context_section}
+
+Query details:
+- Mode: {query_meta.get('mode', 'unknown')}
+- Time period: {query_meta.get('date_start', 'N/A')} to {query_meta.get('date_end', 'N/A')}
+- Variables requested: {query_meta.get('selected_variables', [])}
+
+Data results:
+{data_summary}
+
+RESPONSE STYLE GUIDELINES:
+
+**IMPORTANT**: Always use rich Markdown formatting to make your response visually appealing and easy to read. Use **bold text**, bullet points, headers, and separators.
+
+1. **RESEARCH/ANALYSIS QUERIES** (when user asks "why", "how", "what does this mean", "explain", "analyze", "research", "study", "significance"):
+   - Use **## Key Findings** headers
+   - Include **bold** key terms and important values
+   - Use bullet points for multiple findings: • **Finding**: explanation
+   - Add horizontal separators (---) between sections
+   - Provide 2-3 well-formatted paragraphs with context
+   - Include background information about ocean processes
+   - Explain the significance of the findings
+   - Mention implications for climate/marine research
+
+2. **DATA REQUESTS** (when user asks "show me", "give me", "what is the", "temperature", "salinity", specific values):
+   - Use **bold** for key values and measurements
+   - Format as: **Temperature**: 25.2°C - 28.7°C
+   - Use bullet points for multiple data points
+   - Add **## Data Summary** header
+   - Keep it concise but visually formatted
+
+3. **GENERAL QUERIES** (mixed or unclear intent):
+   - Use **## Overview** header
+   - Include **bold** key findings
+   - Use bullet points for multiple points
+   - 1-2 well-formatted paragraphs with context
+
+**FORMATTING REQUIREMENTS**:
+- Always use **bold** for important values, measurements, and key terms
+- Use bullet points (•) for lists and multiple findings
+- Use ## headers for main sections
+- Use --- for visual separators between sections
+- Make the text visually appealing and scannable
+
+Choose the appropriate style based on the user's query, but ALWAYS include rich Markdown formatting.
+"""
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=analysis_prompt,
+        )
+        return response.text
+    except Exception as e:
+        # Fallback to basic analysis if Gemini fails
+        return f"## Data Summary\n\n• **Data Found**: Oceanographic measurements in your requested region\n• **Source**: **Argo autonomous floats**\n• **Use**: Climate research and marine studies\n\n---\n\nThis data provides valuable insights into ocean conditions for scientific research."
 
 
 # --- Helper: fetch data from Argopy for a bounding box or points ---
@@ -330,6 +507,8 @@ def fetch_argopy_for_points(
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     try:
+        conversation_history = []
+        session_id = str(uuid4())
         while True:
             data = await ws.receive_text()
             print(f"Received data: {data}")
@@ -342,6 +521,7 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
 
             query = payload.get("query")
+            conversation_history.append(query)
             if not query:
                 await ws.send_text(json.dumps({"error": "Missing 'query' in payload."}))
                 continue
@@ -353,6 +533,7 @@ async def websocket_endpoint(ws: WebSocket):
                     "message": "🔎 Analyzing your query",
                     "thinking": [
                         "Understanding the ocean data request",
+                        "Searching for similar previous queries",  # Add this line
                         "Identifying geographical parameters",
                         "Determining time range requirements",
                         "Selecting relevant ocean variables",
@@ -362,11 +543,15 @@ async def websocket_endpoint(ws: WebSocket):
                 })
             )
 
+            # Search for similar chats before calling Gemini
+            similar_chats = search_similar_chats(query, n_results=3, similarity_threshold=0.7)
+            print(f"Found {len(similar_chats)} similar previous chats")
+
             loop = asyncio.get_running_loop()
             try:
                 gemini_result = await loop.run_in_executor(
-                    None, gemini_select_region, query
-                )
+                        None, gemini_select_region, query, similar_chats, conversation_history
+                    )
             except Exception as exc:
                 await ws.send_text(
                     json.dumps(
@@ -618,14 +803,37 @@ async def websocket_endpoint(ws: WebSocket):
                         await asyncio.sleep(2)
                         
                         # Generate dynamic analysis using Gemini
+                        # Generate dynamic analysis using Gemini
                         try:
                             dynamic_analysis = await loop.run_in_executor(
-                                None, generate_data_analysis, query, result, query_meta
+                                None, generate_data_analysis, query, result, query_meta, similar_chats
                             )
                             result["dynamic_analysis"] = dynamic_analysis
+                            
+                            # Store user query and its dynamic analysis in Chroma DB
+                            doc_id = str(uuid4())
+                            chat_embeddings_collection.add(
+                                ids=[doc_id],
+                                documents=[dynamic_analysis],
+                                metadatas=[{
+                                    "query": query,
+                                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                                    "query_meta": json.dumps(query_meta),
+                                    "id": doc_id,
+                                }]
+                            )
+                            print(f"Stored analysis with ID: {doc_id}")
+                            
+                            # Log similar chats found
+                            if similar_chats:
+                                print(f"Used context from {len(similar_chats)} similar previous queries")
+                                for chat in similar_chats:
+                                    print(f"  - Similar: '{chat['query'][:50]}...' (similarity: {1-chat['distance']:.2f})")
+                                    
                         except Exception as e:
                             print(f"Failed to generate dynamic analysis: {e}")
                             result["dynamic_analysis"] = "Analysis generation failed, showing data results."
+
                         
                         await ws.send_text(
                             json.dumps(
@@ -638,7 +846,7 @@ async def websocket_endpoint(ws: WebSocket):
                                 allow_nan=False,
                             )
                         )
-                        print(f"Sent result: {result}")
+                        # print(f"Sent result: {result}")
 
                     except (
                         FSTimeoutError,
