@@ -36,8 +36,8 @@ export function ChatMessage({
   setActiveTab 
 }: { 
   message: Message;
-  activeTab: 'answer' | 'sources' | 'graph';
-  setActiveTab: (tab: 'answer' | 'sources' | 'graph') => void;
+  activeTab: 'answer' | 'sources' | 'graph' | 'steps';
+  setActiveTab: (tab: 'answer' | 'sources' | 'graph' | 'steps') => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -135,6 +135,15 @@ export function ChatMessage({
             onClick={() => setActiveTab('graph')}
           >
             Graph
+          </Button>
+          <Button 
+            aria-label="Steps" 
+            size="sm" 
+            variant={activeTab === 'steps' ? 'secondary' : 'ghost'} 
+            className="h-7 px-2 rounded-md"
+            onClick={() => setActiveTab('steps')}
+          >
+            Steps
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -385,6 +394,46 @@ export function ChatMessage({
         <div className="text-center py-8 text-muted-foreground">
           <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p>Graph visualization coming soon.</p>
+        </div>
+      )}
+
+      {activeTab === 'steps' && (
+        <div className="space-y-3">
+          {(() => {
+            console.log("🔍 Steps tab - message.thinkingSteps:", message.thinkingSteps);
+            console.log("🔍 Steps tab - message.thinkingSteps length:", message.thinkingSteps?.length);
+            return null;
+          })()}
+          {message.thinkingSteps && message.thinkingSteps.length > 0 ? (
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-foreground mb-3">Analysis Steps</div>
+              <div className="space-y-2">
+                {message.thinkingSteps.map((step, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/20"
+                  >
+                    <div className="flex-shrink-0 mt-0.5">
+                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
+                        {index + 1}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground leading-relaxed">
+                        {step}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No thinking steps available for this response.</p>
+              <p className="text-xs mt-2">Debug: thinkingSteps = {JSON.stringify(message.thinkingSteps)}</p>
+            </div>
+          )}
         </div>
       )}
 
