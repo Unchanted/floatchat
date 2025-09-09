@@ -1,0 +1,225 @@
+# tools.yaml - Configuration for Argo Float Database Tools
+sources:
+  argo-postgres-source:
+    kind: postgres
+    host: localhost
+    port: 5432
+    database: floatchat_SIH2025
+    user: postgres
+    password: root
+
+tools:
+  # Basic data retrieval tools
+  get_float_profiles:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Get Argo float profiles with optional filtering by platform number, date range, and location"
+    parameters:
+      - name: platform_number
+        type: string
+        description: "Filter by specific platform number (optional)"
+      - name: start_date
+        type: string
+        description: "Start date in YYYY-MM-DD format (optional)"
+      - name: end_date
+        type: string
+        description: "End date in YYYY-MM-DD format (optional)"
+      - name: limit
+        type: integer
+        description: "Maximum number of records to return (default: 100)"
+    statement: |
+      SELECT platform_number, cycle_number, reference_date_time, 
+             latitude, longitude, pres, temp, psal, 
+             temp_adjusted, psal_adjusted
+      FROM argo_float_data 
+      WHERE ($1::text IS NULL OR platform_number = $1)
+        AND ($2::date IS NULL OR reference_date_time >= $2::date)
+        AND ($3::date IS NULL OR reference_date_time <= $3::date)
+      ORDER BY reference_date_time DESC
+      LIMIT COALESCE($4, 100);
+
+  search_floats_by_location:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Find Argo floats within a geographic bounding box"
+    parameters:
+      - name: min_lat
+        type: number
+        description: "Minimum latitude"
+      - name: max_lat
+        type: number
+        description: "Maximum latitude"
+      - name: min_lon
+        type: number
+        description: "Minimum longitude"
+      - name: max_lon
+        type: number
+        description: "Maximum longitude"
+      - name: limit
+        type: integer
+        description: "Maximum number of records (default: 100)"
+    statement: |
+      SELECT DISTINCT platform_number, project_name, 
+             latitude, longitude, reference_date_time,
+             COUNT(*) as profile_count
+      FROM argo_float_data 
+      WHERE latitude BETWEEN $1 AND $2 
+        AND longitude BETWEEN $3 AND $4
+        AND latitude IS NOT NULL 
+        AND longitude IS NOT NULL
+      GROUP BY platform_number, project_name, latitude, longitude, reference_date_time
+      ORDER BY reference_date_time DESC
+      LIMIT COALESCE($5, 100);
+
+  get_temperature_profiles:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Get temperature profiles for specific platform and cycle with depth analysis"
+    parameters:
+      - name: platform_number
+        type: string
+        description: "Platform number to search for"
+      - name: cycle_number
+        type: integer
+        description: "Cycle number (optional)"
+      - name: max_depth
+        type: number
+        description: "Maximum pressure/depth to include (optional)"
+    statement: |
+      SELECT platform_number, cycle_number, reference_date_time,
+             latitude, longitude, pres as depth_pressure,
+             temp, temp_adjusted, temp_qc, temp_adjusted_qc
+      FROM argo_float_data 
+      WHERE platform_number = $1
+        AND ($2::integer IS NULL OR cycle_number = $2)
+        AND ($3::numeric IS NULL OR pres <= $3)
+        AND temp IS NOT NULL
+      ORDER BY pres ASC;
+
+  get_salinity_profiles:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Get salinity profiles for oceanographic analysis"
+    parameters:
+      - name: platform_number
+        type: string
+        description: "Platform number"
+      - name: cycle_number
+        type: integer
+        description: "Cycle number (optional)"
+      - name: quality_control
+        type: string
+        description: "Quality control level: 'good' for QC=1, 'all' for any (default: good)"
+    statement: |
+      SELECT platform_number, cycle_number, reference_date_time,
+             latitude, longitude, pres as depth_pressure,
+             psal, psal_adjusted, psal_qc, psal_adjusted_qc
+      FROM argo_float_data 
+      WHERE platform_number = $1
+        AND ($2::integer IS NULL OR cycle_number = $2)
+        AND psal IS NOT NULL
+        AND CASE 
+              WHEN $3 = 'good' THEN psal_qc = '1'
+              ELSE psal_qc IS NOT NULL
+            END
+      ORDER BY pres ASC;
+
+  get_platform_summary:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Get summary statistics for a specific Argo float platform"
+    parameters:
+      - name: platform_number
+        type: string
+        description: "Platform number to analyze"
+    statement: |
+      SELECT 
+        platform_number,
+        project_name,
+        pi_name,
+        platform_type,
+        COUNT(DISTINCT cycle_number) as total_cycles,
+        MIN(reference_date_time) as first_profile,
+        MAX(reference_date_time) as last_profile,
+        COUNT(*) as total_measurements,
+        ROUND(AVG(latitude)::numeric, 4) as avg_latitude,
+        ROUND(AVG(longitude)::numeric, 4) as avg_longitude,
+        ROUND(MIN(pres)::numeric, 2) as min_pressure,
+        ROUND(MAX(pres)::numeric, 2) as max_pressure
+      FROM argo_float_data 
+      WHERE platform_number = $1
+        AND latitude IS NOT NULL 
+        AND longitude IS NOT NULL
+      GROUP BY platform_number, project_name, pi_name, platform_type;
+
+  search_by_date_range:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Search Argo float data within a specific date range with optional geographic filtering"
+    parameters:
+      - name: start_date
+        type: string
+        description: "Start date in YYYY-MM-DD format"
+      - name: end_date
+        type: string
+        description: "End date in YYYY-MM-DD format"
+      - name: region_lat_min
+        type: number
+        description: "Minimum latitude for regional filtering (optional)"
+      - name: region_lat_max
+        type: number
+        description: "Maximum latitude for regional filtering (optional)"
+      - name: limit
+        type: integer
+        description: "Maximum records to return (default: 200)"
+    statement: |
+      SELECT platform_number, cycle_number, reference_date_time,
+             latitude, longitude, project_name,
+             COUNT(*) as measurements_count
+      FROM argo_float_data 
+      WHERE reference_date_time BETWEEN $1::date AND $2::date
+        AND ($3::numeric IS NULL OR latitude >= $3)
+        AND ($4::numeric IS NULL OR latitude <= $4)
+      GROUP BY platform_number, cycle_number, reference_date_time, 
+               latitude, longitude, project_name
+      ORDER BY reference_date_time DESC
+      LIMIT COALESCE($5, 200);
+
+  get_quality_control_stats:
+    kind: postgres
+    source: argo-postgres-source
+    description: "Get quality control statistics for data validation"
+    parameters:
+      - name: platform_number
+        type: string
+        description: "Platform number (optional, for specific platform analysis)"
+    statement: |
+      SELECT 
+        COALESCE($1, 'ALL_PLATFORMS') as platform_filter,
+        COUNT(*) as total_records,
+        COUNT(CASE WHEN temp_qc = '1' THEN 1 END) as good_temp_records,
+        COUNT(CASE WHEN psal_qc = '1' THEN 1 END) as good_salinity_records,
+        COUNT(CASE WHEN pres_qc = '1' THEN 1 END) as good_pressure_records,
+        ROUND(COUNT(CASE WHEN temp_qc = '1' THEN 1 END) * 100.0 / COUNT(*), 2) as temp_quality_percentage,
+        ROUND(COUNT(CASE WHEN psal_qc = '1' THEN 1 END) * 100.0 / COUNT(*), 2) as salinity_quality_percentage
+      FROM argo_float_data 
+      WHERE ($1::text IS NULL OR platform_number = $1)
+        AND temp IS NOT NULL 
+        AND psal IS NOT NULL;
+
+toolsets:
+  oceanographic_analysis:
+    - get_float_profiles
+    - search_floats_by_location
+    - get_temperature_profiles
+    - get_salinity_profiles
+    - get_platform_summary
+  
+  data_quality:
+    - get_quality_control_stats
+    - search_by_date_range
+  
+  basic_search:
+    - get_float_profiles
+    - search_floats_by_location
+    - search_by_date_range

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gemini + Argopy WebSocket Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #333;
+    }
+
+    .container {
+      width: 80%;
+      max-width: 900px;
+      height: 90vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    h2 {
+      padding: 20px;
+      margin: 0;
+      background: #28a745; /* Changed color to green for success/download theme */
+      color: white;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    #messages {
+      flex-grow: 1;
+      padding: 20px;
+      overflow-y: auto;
+      border-bottom: 1px solid #eee;
+    }
+
+    .message {
+      padding: 10px 15px;
+      margin-bottom: 12px;
+      border-radius: 18px;
+      max-width: 85%;
+      word-wrap: break-word;
+    }
+
+    .client {
+      background: #007bff;
+      color: white;
+      align-self: flex-end;
+      margin-left: auto;
+      border-bottom-right-radius: 4px;
+    }
+
+    .server {
+      background: #e9e9eb;
+      color: #333;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .system {
+      color: #888;
+      font-style: italic;
+      text-align: center;
+      font-size: 0.9em;
+      margin: 10px 0;
+    }
+
+    .input-area {
+      display: flex;
+      padding: 20px;
+      background: #f7f7f7;
+    }
+
+    #input {
+      flex-grow: 1;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 20px;
+      margin-right: 10px;
+      font-size: 1em;
+    }
+     #input:focus {
+        outline: none;
+        border-color: #28a745;
+    }
+
+    #send {
+      padding: 12px 20px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: background-color 0.2s;
+    }
+
+    #send:hover {
+      background: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Floatchat Data Downloader</h2>
+
+    <div id="messages"></div>
+
+    <div class="input-area">
+      <input id="input" type="text" placeholder="Ask something about Floatchat data..." />
+      <button id="send">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesDiv = document.getElementById("messages");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+
+    /**
+     * Adds a message to the chat display.
+     * @param {string | HTMLElement} content - The text or HTML element to display.
+     * @param {string} type - The message type ('client', 'server', or 'system').
+     */
+    function addMessage(content, type) {
+      const div = document.createElement("div");
+      // For system messages, don't use the bubble style
+      div.className = type === 'system' ? type : "message " + type;
+      if (typeof content === 'string') {
+        div.textContent = content;
+      } else {
+        div.appendChild(content);
+      }
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    /**
+     * Converts the Argopy summary string into a CSV formatted string.
+     * @param {string} summary - The raw summary string from the server.
+     * @returns {string|null} - The CSV content as a string or null if parsing fails.
+     */
+    function createCsvContent(summary) {
+        const lines = summary.trim().split('\n');
+        if (lines.length < 2) return null;
+
+        const csvLines = [];
+        const delimiter = /\s{2,}/; // Regex to split by 2 or more spaces
+
+        // Process header
+        const headers = lines[0].trim().split(delimiter).map(h => `"${h.replace(/"/g, '""')}"`);
+        csvLines.push(headers.join(','));
+
+        // Process data rows (skipping header and the final summary line)
+        const dataLines = lines.slice(1, lines.length - 1);
+        dataLines.forEach(lineText => {
+            // Skip the filler '...' row
+            if (lineText.trim() === '...') return;
+            
+            const cells = lineText.trim().split(delimiter).map(cell => `"${cell.replace(/"/g, '""')}"`);
+            csvLines.push(cells.join(','));
+        });
+
+        return csvLines.join('\n');
+    }
+
+    /**
+     * Triggers a browser download for the given content.
+     * @param {string} content - The content to be downloaded.
+     * @param {string} fileName - The name of the file.
+     * @param {string} mimeType - The MIME type of the file.
+     */
+    function downloadFile(content, fileName, mimeType = 'text/csv;charset=utf-8;') {
+        const blob = new Blob([content], { type: mimeType });
+        const link = document.createElement("a");
+        
+        link.href = URL.createObjectURL(blob);
+        link.style.visibility = 'hidden';
+        link.download = fileName;
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    const ws = new WebSocket("ws://localhost:8000/ws");
+
+    ws.onopen = () => addMessage("✅ Connected to server", "system");
+    ws.onclose = () => addMessage("❌ Disconnected from server", "system");
+    ws.onerror = (err) => addMessage(`⚠️ Error: ${err.message}`, "system");
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Check for the specific result status and trigger download
+        if (data.status === "argopy_result" && data.result && data.result.summary) {
+            const csvContent = createCsvContent(data.result.summary);
+            if (csvContent) {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                downloadFile(csvContent, `argo_data_${timestamp}.csv`);
+                addMessage("✅ Data processed. Your CSV file is downloading.", "system");
+            } else {
+                 addMessage("⚠️ Could not parse Argopy data to create a CSV.", "server");
+            }
+        } else {
+            // Display other messages as formatted JSON
+            const formattedJson = JSON.stringify(data, null, 2);
+            const pre = document.createElement('pre');
+            pre.textContent = formattedJson;
+            addMessage(pre, "server");
+        }
+      } catch {
+        addMessage(event.data, "server");
+      }
+    };
+
+    function sendMessage() {
+      const text = input.value.trim();
+      if (text && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ query: text }));
+        addMessage(text, "client");
+        input.value = "";
+      }
+    }
+
+    sendBtn.onclick = sendMessage;
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
+  </script>
+</body>
+</html>

@@ -186,6 +186,7 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             data = await ws.receive_text()
+            print(f"Received data: {data}")
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:
@@ -211,6 +212,7 @@ async def websocket_endpoint(ws: WebSocket):
                 fc = gemini_result["function_call"]
 
                 # Stage 2: Generating SQL
+                print(f"Generating SQL for function call: {fc}")
                 await ws.send_text(json.dumps({"stage": "sql_generation", "message": "🛠 Generating SQL for your request"}))
 
                 args = fc.get("args", {})
@@ -221,6 +223,7 @@ async def websocket_endpoint(ws: WebSocket):
 
                     try:
                         # Stage 3: Fetching from DB
+                        print(f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}")
                         await ws.send_text(json.dumps({"stage": "db_fetch", "message": "📡 Fetching data from PostgreSQL"}))
 
                         if mode == "box":
@@ -240,6 +243,7 @@ async def websocket_endpoint(ws: WebSocket):
                             continue
 
                         # Stage 4: Processing data
+                        print(f"Fetching data for mode: {mode}, date_min: {date_min}, date_max: {date_max}, args: {args}")
                         await ws.send_text(json.dumps({"stage": "processing", "message": "⚙️ Processing data"}))
                         # result = process_data(raw_result)  # wrap your pandas/cleaning logic here
                         result = raw_result 
@@ -247,6 +251,7 @@ async def websocket_endpoint(ws: WebSocket):
                         # Stage 5: Completed
                         await ws.send_text(json.dumps({"stage": "completed", "message": "✅ Data ready"}))
                         await ws.send_text(json.dumps({"stage": "result", "result": result}, default=str))
+                        print(f"Sent result: {result}")
 
                     except Exception as exc:
                         tb = traceback.format_exc()
