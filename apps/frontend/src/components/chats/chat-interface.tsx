@@ -7,6 +7,7 @@ import { Separator } from "../../../../../packages/ui/src/components/separator";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { WelcomeScreen } from "./welcome-screen";
+import { ThinkingIndicator } from "./thinking-indicator";
 import { Search, Sparkles, MoreHorizontal } from "lucide-react";
 import { WebSocketService } from "../../lib/websocket";
 
@@ -26,6 +27,7 @@ export interface Message {
 interface LoadingState {
   isLoading: boolean;
   stage?: "analyzing" | "searching" | "generating" | "processing";
+  thinking?: string[];
 }
 
 // Updated WebSocket response interface to handle all backend message types
@@ -42,6 +44,7 @@ export interface WebSocketResponse {
   result?: any;
   error?: string;
   traceback?: string;
+  thinking?: string[];
 }
 
 export function ChatInterface() {
@@ -129,28 +132,28 @@ export function ChatInterface() {
             switch (data.stage) {
               case "analyzing":
                 console.log("🔎 Stage: Analyzing query");
-                setLoadingState({ isLoading: true, stage: "analyzing" });
+                setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
                 break;
                 
               case "sql_generation":
                 console.log("🛠 Stage: Generating SQL");
-                setLoadingState({ isLoading: true, stage: "searching" });
+                setLoadingState({ isLoading: true, stage: "searching", thinking: data.thinking });
                 break;
                 
               case "db_fetch":
                 console.log("📡 Stage: Fetching from database");
-                setLoadingState({ isLoading: true, stage: "analyzing" });
+                setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
                 break;
                 
               case "processing":
                 console.log("⚙️ Stage: Processing data");
-                setLoadingState({ isLoading: true, stage: "generating" });
+                setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
                 break;
                 
               case "completed":
                 console.log("✅ Stage: Processing completed");
                 // Keep loading state until we get the actual result
-                setLoadingState({ isLoading: true, stage: "generating" });
+                setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
                 break;
                 
               case "result":
@@ -403,7 +406,7 @@ export function ChatInterface() {
     }
   }, [messages]);
 
-  const LoadingIndicator = ({ stage }: { stage?: string }) => {
+  const LoadingIndicator = ({ stage, thinking }: { stage?: string; thinking?: string[] }) => {
     const stageText = {
       analyzing: "Analyzing your ocean data query...",
       searching: "Generating database query...",
@@ -411,6 +414,20 @@ export function ChatInterface() {
       processing: "Finalizing results..."
     };
 
+    // If we have thinking steps, show the thinking indicator
+    if (thinking && thinking.length > 0) {
+      return (
+        <div className="p-6">
+          <ThinkingIndicator 
+            thinking={thinking} 
+            stage={stage || "processing"} 
+            isVisible={true} 
+          />
+        </div>
+      );
+    }
+
+    // Fallback to simple loading indicator
     return (
       <div className="flex items-center gap-3 p-6">
         <div className="flex gap-1">
@@ -463,7 +480,7 @@ export function ChatInterface() {
                 </div>
               ))}
               {loadingState.isLoading && (
-                <LoadingIndicator stage={loadingState.stage} />
+                <LoadingIndicator stage={loadingState.stage} thinking={loadingState.thinking} />
               )}
             </div>
           </ScrollArea>
