@@ -46,17 +46,17 @@ export function AppSidebar() {
   ];
 
   const footerContent = (
-    <div className="space-y-2">
-      <div className="space-y-1">
-        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+    <div className="space-y-1 mt-auto">
+      <div className="space-y-0.5">
+        <button className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group">
           <IconSettings className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           <span className="text-sm text-foreground">Settings</span>
         </button>
-        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+        <button className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group">
           <IconHelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           <span className="text-sm text-foreground">Help & Support</span>
         </button>
-        <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group">
+        <button className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group">
           <IconUser className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           <span className="text-sm text-foreground">Account</span>
         </button>
