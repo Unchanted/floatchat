@@ -22,6 +22,7 @@ export interface Message {
   tableData?: Array<Record<string, any>>;
   fullTableData?: Array<Record<string, any>>;
   queryMeta?: any;
+  thinkingSteps?: string[];
 }
 
 interface LoadingState {
@@ -51,7 +52,8 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [activeTab, setActiveTab] = useState<'answer' | 'sources' | 'graph'>('answer');
+  const [activeTab, setActiveTab] = useState<'answer' | 'sources' | 'graph' | 'steps'>('answer');
+  const [currentThinkingSteps, setCurrentThinkingSteps] = useState<string[]>([]);
   const wsServiceRef = useRef<WebSocketService | null>(null);
   const lastSentUserMessageIdRef = useRef<string | null>(null);
 
@@ -132,28 +134,53 @@ export function ChatInterface() {
             switch (data.stage) {
               case "analyzing":
                 console.log("🔎 Stage: Analyzing query");
+                console.log("🔍 Analyzing stage - thinking data:", data.thinking);
                 setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
+                // Accumulate thinking steps
+                if (data.thinking && data.thinking.length > 0) {
+                  setCurrentThinkingSteps(prev => {
+                    const newSteps = [...prev, ...(data.thinking || [])];
+                    console.log("📝 Updated thinking steps:", newSteps);
+                    return newSteps;
+                  });
+                }
                 break;
                 
               case "sql_generation":
                 console.log("🛠 Stage: Generating SQL");
                 setLoadingState({ isLoading: true, stage: "searching", thinking: data.thinking });
+                // Accumulate thinking steps
+                if (data.thinking && data.thinking.length > 0) {
+                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+                }
                 break;
                 
               case "db_fetch":
                 console.log("📡 Stage: Fetching from database");
                 setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
+                // Accumulate thinking steps
+                if (data.thinking && data.thinking.length > 0) {
+                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+                }
                 break;
                 
               case "processing":
                 console.log("⚙️ Stage: Processing data");
                 setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
+                // Accumulate thinking steps
+                if (data.thinking && data.thinking.length > 0) {
+                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+                }
                 break;
                 
               case "completed":
                 console.log("✅ Stage: Processing completed");
                 // Keep loading state until we get the actual result
                 setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
+                // Accumulate thinking steps
+                if (data.thinking && data.thinking.length > 0) {
+                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+                }
                 break;
                 
               case "result":
@@ -176,6 +203,7 @@ export function ChatInterface() {
                   }
                 }
 
+                console.log("💾 Creating assistant message with thinking steps:", currentThinkingSteps);
                 const assistant: Message = {
                   id: crypto.randomUUID(),
                   role: "assistant",
@@ -194,6 +222,7 @@ export function ChatInterface() {
                     return undefined;
                   })(),
                   queryMeta: (data as any).query_meta,
+                  thinkingSteps: [...currentThinkingSteps],
                   sources: [
                     { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
                     { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
@@ -202,6 +231,7 @@ export function ChatInterface() {
                 };
                 setMessages((m) => [...m, assistant]);
                 setLoadingState({ isLoading: false });
+                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
                 break;
                 
               case "error":
@@ -211,9 +241,11 @@ export function ChatInterface() {
                   role: "assistant",
                   content: `❌ **Error Processing Request**\n\n${data.message}\n\n${data.traceback ? `**Technical Details:**\n\`\`\`\n${data.traceback}\n\`\`\`` : ''}`,
                   timestamp: new Date().toISOString(),
+                  thinkingSteps: [...currentThinkingSteps],
                 };
                 setMessages((m) => [...m, errorMessage]);
                 setLoadingState({ isLoading: false });
+                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
                 break;
                 
               case "no_function_call":
@@ -223,9 +255,11 @@ export function ChatInterface() {
                   role: "assistant",
                   content: data.message || "I couldn't process your request as a structured query. Please try rephrasing your question about ocean data.",
                   timestamp: new Date().toISOString(),
+                  thinkingSteps: [...currentThinkingSteps],
                 };
                 setMessages((m) => [...m, textMessage]);
                 setLoadingState({ isLoading: false });
+                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
                 break;
                 
               default:
@@ -237,9 +271,11 @@ export function ChatInterface() {
                     role: "assistant",
                     content: data.message,
                     timestamp: new Date().toISOString(),
+                    thinkingSteps: [...currentThinkingSteps],
                   };
                   setMessages((m) => [...m, genericMessage]);
                   setLoadingState({ isLoading: false });
+                  setCurrentThinkingSteps([]); // Reset thinking steps after message is created
                 }
             }
           } else if (data.type && data.content) {
@@ -250,6 +286,7 @@ export function ChatInterface() {
               role: "assistant",
               content: data.content,
               timestamp: new Date().toISOString(),
+              thinkingSteps: [...currentThinkingSteps],
               sources: [
                 { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
                 { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
@@ -258,6 +295,7 @@ export function ChatInterface() {
             };
             setMessages((m) => [...m, assistant]);
             setLoadingState({ isLoading: false });
+            setCurrentThinkingSteps([]); // Reset thinking steps after message is created
           } else if (data.error) {
             // Handle direct error messages
             console.error("❌ Direct error message received");
@@ -266,9 +304,11 @@ export function ChatInterface() {
               role: "assistant",
               content: `❌ **Error**: ${data.error}`,
               timestamp: new Date().toISOString(),
+              thinkingSteps: [...currentThinkingSteps],
             };
             setMessages((m) => [...m, errorMsg]);
             setLoadingState({ isLoading: false });
+            setCurrentThinkingSteps([]); // Reset thinking steps after message is created
           }
         });
 
@@ -328,6 +368,7 @@ export function ChatInterface() {
     setMessages((m) => [...m, userMsg]);
     lastSentUserMessageIdRef.current = userMsg.id;
     setLoadingState({ isLoading: true, stage: "analyzing" });
+    setCurrentThinkingSteps([]); // Reset thinking steps for new query
     setActiveTab('answer'); // Reset to answer tab for new queries
     
     // Ensure connection status is connected before sending
@@ -358,8 +399,10 @@ export function ChatInterface() {
         role: "assistant",
         content: `❌ **Connection Error**\n\nI'm having trouble connecting to the ocean data analysis system. Please check your connection and try again.\n\n**Error Details:** ${error}`,
         timestamp: new Date().toISOString(),
+        thinkingSteps: [...currentThinkingSteps],
       };
       setMessages((m) => [...m, assistant]);
+      setCurrentThinkingSteps([]); // Reset thinking steps after message is created
     }
   };
 
