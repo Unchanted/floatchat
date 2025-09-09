@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .connecting { background-color: #fff3cd; color: #856404; }
+        #messages {
+            border: 1px solid #ccc;
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            width: 70%;
+            padding: 8px;
+        }
+        button {
+            padding: 8px 16px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    
+    <div id="status" class="status disconnected">Disconnected</div>
+    
+    <div>
+        <input type="text" id="messageInput" placeholder="Enter your query..." />
+        <button onclick="sendMessage()">Send</button>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+    
+    <div id="messages"></div>
+
+    <script>
+        let socket = null;
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+
+        function updateStatus(status, className) {
+            statusDiv.textContent = status;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function addMessage(message, type = 'info') {
+            const div = document.createElement('div');
+            div.style.marginBottom = '5px';
+            div.style.padding = '5px';
+            div.style.backgroundColor = type === 'sent' ? '#e3f2fd' : type === 'received' ? '#f3e5f5' : '#f5f5f5';
+            div.style.borderRadius = '3px';
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function connect() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                addMessage('Already connected!', 'info');
+                return;
+            }
+
+            updateStatus('Connecting...', 'connecting');
+            addMessage('Attempting to connect to WebSocket...', 'info');
+
+            socket = new WebSocket("ws://localhost:8000/ws");
+
+            socket.onopen = () => {
+                updateStatus('Connected', 'connected');
+                addMessage('Connected to WebSocket successfully!', 'received');
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                addMessage(`Received: ${JSON.stringify(data, null, 2)}`, 'received');
+            };
+
+            socket.onerror = (error) => {
+                updateStatus('Error', 'disconnected');
+                addMessage(`WebSocket error: ${error}`, 'info');
+            };
+
+            socket.onclose = (event) => {
+                updateStatus('Disconnected', 'disconnected');
+                addMessage(`WebSocket closed: ${event.code} - ${event.reason}`, 'info');
+            };
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                addMessage('Not connected to WebSocket!', 'info');
+                return;
+            }
+
+            const data = {
+                query: message
+            };
+
+            socket.send(JSON.stringify(data));
+            addMessage(`Sent: ${JSON.stringify(data, null, 2)}`, 'sent');
+            messageInput.value = '';
+        }
+
+        // Allow Enter key to send message
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Auto-connect on page load
+        window.onload = () => {
+            connect();
+        };
+    </script>
+</body>
+</html>
