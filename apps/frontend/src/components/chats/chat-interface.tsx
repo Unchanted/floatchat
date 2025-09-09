@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollArea } from "../../../../../packages/ui/src/components/scroll-area";
 import { Button } from "../../../../../packages/ui/src/components/button";
 import { Separator } from "../../../../../packages/ui/src/components/separator";
@@ -27,6 +27,7 @@ interface LoadingState {
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
+  const lastSentUserMessageIdRef = useRef<string | null>(null);
 
   const sendMessage = async (text: string) => {
     const userMsg: Message = {
@@ -36,6 +37,7 @@ export function ChatInterface() {
       timestamp: new Date().toISOString(),
     };
     setMessages((m) => [...m, userMsg]);
+    lastSentUserMessageIdRef.current = userMsg.id;
     setLoadingState({ isLoading: true, stage: "searching" });
 
     // Simulate multi-stage loading
@@ -75,6 +77,27 @@ This analysis is based on quality-controlled Argo observations from the global a
     }, 2400);
   };
 
+  // After messages update, if the last added message was from the user, snap it to the top
+  useEffect(() => {
+    if (!lastSentUserMessageIdRef.current) return;
+    const messageId = lastSentUserMessageIdRef.current;
+
+    const viewport = document.querySelector(
+      "#chat-scroll-area [data-slot=\"scroll-area-viewport\"]"
+    ) as HTMLElement | null;
+    const target = document.getElementById(`msg-${messageId}`);
+
+    if (viewport && target) {
+      const viewportRect = viewport.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const top = targetRect.top - viewportRect.top + viewport.scrollTop;
+      viewport.scrollTo({ top, behavior: "auto" });
+    }
+
+    // reset once handled
+    lastSentUserMessageIdRef.current = null;
+  }, [messages.length]);
+
   const LoadingIndicator = ({ stage }: { stage?: string }) => {
     const stageText = {
       searching: "Searching ocean databases...",
@@ -103,10 +126,10 @@ This analysis is based on quality-controlled Argo observations from the global a
         {messages.length === 0 ? (
           <WelcomeScreen onPick={sendMessage} />
         ) : (
-          <ScrollArea className="flex-1 min-h-0">
+          <ScrollArea id="chat-scroll-area" className="flex-1 min-h-0">
             <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
               {messages.map((msg, index) => (
-                <div key={msg.id}>
+                <div key={msg.id} id={`msg-${msg.id}`}>
                   <ChatMessage message={msg} />
                   {index < messages.length - 1 && (
                     <Separator className="my-8 opacity-50" />
