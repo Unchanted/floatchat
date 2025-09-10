@@ -2,11 +2,22 @@
 
 import { AppSidebar } from "../../components/app-sidebar";
 import { ChatInterface } from "../../components/chats/chat-interface";
+import { ChatProvider, useChat } from "../../contexts/chat-context";
 import Link from "next/link";
 import { Button } from "../../../../../packages/ui/src/components/button";
 import { MapPin } from "lucide-react";
+import { useEffect } from "react";
 
-export default function WelcomePage() {
+function WelcomePageContent() {
+  const { chats, activeChatId, createNewChat } = useChat();
+
+  // Auto-create a new chat if no chats exist
+  useEffect(() => {
+    if (chats.length === 0) {
+      createNewChat();
+    }
+  }, [chats.length, createNewChat]);
+
   return (
     <div className="relative h-screen bg-muted/30">
       {/* Sidebar */}
@@ -34,5 +45,13 @@ export default function WelcomePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WelcomePage() {
+  return (
+    <ChatProvider>
+      <WelcomePageContent />
+    </ChatProvider>
   );
 }

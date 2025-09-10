@@ -3,10 +3,9 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../../lib/utils";
-import { IconMenu2, IconX, IconPlus, IconHistory, IconMessage, IconSettings, IconHelpCircle, IconUser } from "@tabler/icons-react";
+import { IconMenu2, IconX, IconPlus, IconHistory, IconMessage, IconSettings, IconHelpCircle, IconUser, IconTrash } from "@tabler/icons-react";
 import { usePathname } from "next/navigation";
-
-const mockHistory = [] as Array<{ id: string; title: string; time: string }>;
+import { useChat } from "../../contexts/chat-context";
 
 interface SidebarLink {
   label: string;
@@ -27,9 +26,35 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { chats, activeChatId, createNewChat, switchToChat, deleteChat } = useChat();
   
   // Show logo on welcome page and during chat interactions
   const shouldShowLogo = pathname === '/welcome';
+
+  const handleNewChat = () => {
+    createNewChat();
+  };
+
+  const handleChatClick = (chatId: string) => {
+    switchToChat(chatId);
+  };
+
+  const handleDeleteChat = (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    deleteChat(chatId);
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    return date.toLocaleDateString();
+  };
 
   return (
     <>
@@ -77,6 +102,7 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
           {/* New Search Button */}
           <div className="p-3">
             <button 
+              onClick={handleNewChat}
               className={cn(
                 "flex items-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors",
                 isExpanded ? "w-full justify-center px-4 py-3 gap-2" : "w-10 h-10 justify-center p-0 mx-auto gap-0"
@@ -99,7 +125,7 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
           </div>
 
           {/* Recent Searches */}
-          {mockHistory.length > 0 && (
+          {chats.length > 0 && (
             <div className="flex-1 px-3">
               <div className="mb-3">
                 <motion.div
@@ -114,30 +140,47 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                   </span>
                 </motion.div>
                 <div className="space-y-1">
-                  {mockHistory.slice(0, 6).map((item, idx) => (
-                    <button
-                      key={idx}
-                      className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group"
-                      title={item.title}
+                  {chats.slice(0, 6).map((chat) => (
+                    <div
+                      key={chat.id}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group relative",
+                        activeChatId === chat.id && "bg-accent"
+                      )}
                     >
-                      <IconMessage className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
-                      <motion.div
-                        className="min-w-0 flex-1"
-                        initial={{ opacity: 0, width: 0 }}
-                        animate={{ 
-                          opacity: isExpanded ? 1 : 0,
-                          width: isExpanded ? "auto" : 0
-                        }}
-                        transition={{ duration: 0.2 }}
+                      <button
+                        onClick={() => handleChatClick(chat.id)}
+                        className="flex items-center gap-3 flex-1 text-left"
+                        title={chat.title}
                       >
-                        <p className="text-sm text-foreground line-clamp-2 leading-tight">
-                          {item.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {item.time}
-                        </p>
-                      </motion.div>
-                    </button>
+                        <IconMessage className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
+                        <motion.div
+                          className="min-w-0 flex-1"
+                          initial={{ opacity: 0, width: 0 }}
+                          animate={{ 
+                            opacity: isExpanded ? 1 : 0,
+                            width: isExpanded ? "auto" : 0
+                          }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <p className="text-sm text-foreground line-clamp-2 leading-tight">
+                            {chat.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatTime(chat.updatedAt)}
+                          </p>
+                        </motion.div>
+                      </button>
+                      {isExpanded && (
+                        <button
+                          onClick={(e) => handleDeleteChat(e, chat.id)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-destructive/10 rounded shrink-0"
+                          title="Delete chat"
+                        >
+                          <IconTrash className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -261,14 +304,70 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                   children
                 ) : (
                   <div className="flex-1 py-4">
-                    {links.map((link, index) => (
-                      <SidebarLinkItem
-                        key={index}
-                        link={link}
-                        isExpanded={true}
-                        onClick={() => setIsMobileOpen(false)}
-                      />
-                    ))}
+                    {/* New Chat Button */}
+                    <div className="px-4 mb-4">
+                      <button 
+                        onClick={() => {
+                          handleNewChat();
+                          setIsMobileOpen(false);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                      >
+                        <IconPlus className="w-5 h-5" />
+                        <span className="text-sm font-medium">New Search</span>
+                      </button>
+                    </div>
+
+                    {/* Recent Chats */}
+                    {chats.length > 0 && (
+                      <div className="px-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <IconHistory className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Recent Searches
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {chats.slice(0, 8).map((chat) => (
+                            <div
+                              key={chat.id}
+                              className={cn(
+                                "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-accent rounded-md transition-colors group relative",
+                                activeChatId === chat.id && "bg-accent"
+                              )}
+                            >
+                              <button
+                                onClick={() => {
+                                  handleChatClick(chat.id);
+                                  setIsMobileOpen(false);
+                                }}
+                                className="flex items-center gap-3 flex-1 text-left"
+                              >
+                                <IconMessage className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm text-foreground line-clamp-2 leading-tight">
+                                    {chat.title}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {formatTime(chat.updatedAt)}
+                                  </p>
+                                </div>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  handleDeleteChat(e, chat.id);
+                                  setIsMobileOpen(false);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-destructive/10 rounded shrink-0"
+                                title="Delete chat"
+                              >
+                                <IconTrash className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

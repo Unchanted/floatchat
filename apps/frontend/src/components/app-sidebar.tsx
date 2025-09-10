@@ -2,48 +2,16 @@
 
 import React from "react";
 import { NewSidebar } from "./ui/new-sidebar";
-import type { SidebarLink } from "./ui/new-sidebar";
 import {
-  IconPlus,
-  IconHistory,
-  IconMessage,
   IconSettings,
   IconHelpCircle,
   IconUser,
-  IconSearch,
 } from "@tabler/icons-react";
 
-const mockHistory = [
-  { id: "1", title: "Ocean temperature variations near the equator during El Niño events", time: "2h ago" },
-  { id: "2", title: "Salinity profiles in the Arabian Sea monsoon season", time: "1d ago" },
-  { id: "3", title: "Compare BGC parameters between Pacific and Atlantic", time: "3d ago" },
-  { id: "4", title: "Chlorophyll concentrations in the Mediterranean", time: "5d ago" },
-  { id: "5", title: "Deep water temperature trends in the Southern Ocean", time: "1w ago" },
-  { id: "6", title: "Oxygen levels in coastal upwelling regions", time: "2w ago" },
-  { id: "7", title: "pH variations in coral reef environments", time: "3w ago" },
-  { id: "8", title: "Nutrient distribution patterns in the Arctic Ocean", time: "1m ago" },
-];
+// Mock history removed - now using real chat data from context
 
 export function AppSidebar() {
-  const sidebarLinks: SidebarLink[] = [
-    {
-      label: "New Search",
-      href: "#",
-      icon: <IconPlus className="w-5 h-5" />,
-      onClick: () => {
-        // Handle new search
-        console.log("New search clicked");
-      },
-    },
-    ...mockHistory.slice(0, 8).map((item) => ({
-      label: item.title,
-      href: "#",
-      icon: <IconMessage className="w-4 h-4" />,
-      onClick: () => {
-        console.log("History item clicked:", item.id);
-      },
-    })),
-  ];
+  // Sidebar links removed - now handled by NewSidebar component with real chat data
 
   const footerContent = (
     <div className="space-y-1 mt-auto">
@@ -69,5 +37,5 @@ export function AppSidebar() {
     </div>
   );
 
-  return <NewSidebar variant="transparent" />;
+  return <NewSidebar variant="transparent" footer={footerContent} />;
 }

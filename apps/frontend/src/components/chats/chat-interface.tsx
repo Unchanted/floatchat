@@ -10,6 +10,7 @@ import { WelcomeScreen } from "./welcome-screen";
 import { ThinkingIndicator } from "./thinking-indicator";
 import { Search, Sparkles, MoreHorizontal } from "lucide-react";
 import { useWebSocket } from "../../contexts/websocket-context";
+import { useChat } from "../../contexts/chat-context";
 
 type Role = "user" | "assistant";
 
@@ -50,7 +51,6 @@ export interface WebSocketResponse {
 }
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
   const [activeTab, setActiveTab] = useState<'answer' | 'sources' | 'graph' | 'steps'>('answer');
   const [currentThinkingSteps, setCurrentThinkingSteps] = useState<string[]>([]);
@@ -58,6 +58,12 @@ export function ChatInterface() {
   
   // Use the global websocket context
   const { connectionStatus, isConnected, sendMessage: wsSendMessage, onMessage, onError, onClose } = useWebSocket();
+  
+  // Use the chat context
+  const { activeChat, addMessageToChat, updateChatTitle } = useChat();
+  
+  // Get messages from the active chat
+  const messages = activeChat?.messages || [];
 
   // Helper function to format result data for display
   const formatResultForDisplay = (result: any): string => {
@@ -227,7 +233,11 @@ export function ChatInterface() {
               // Add graph analysis to the message
               ...(resultPayload?.graph_analysis && { graphAnalysis: resultPayload.graph_analysis }),
             };
-            setMessages((m) => [...m, assistant]);
+            
+            // Add message to the active chat
+            if (activeChat) {
+              addMessageToChat(activeChat.id, assistant);
+            }
             setLoadingState({ isLoading: false });
             setCurrentThinkingSteps([]); // Reset thinking steps after message is created
             break;
@@ -241,7 +251,11 @@ export function ChatInterface() {
               timestamp: new Date().toISOString(),
               thinkingSteps: [...currentThinkingSteps],
             };
-            setMessages((m) => [...m, errorMessage]);
+            
+            // Add error message to the active chat
+            if (activeChat) {
+              addMessageToChat(activeChat.id, errorMessage);
+            }
             setLoadingState({ isLoading: false });
             setCurrentThinkingSteps([]); // Reset thinking steps after message is created
             break;
@@ -255,7 +269,11 @@ export function ChatInterface() {
               timestamp: new Date().toISOString(),
               thinkingSteps: [...currentThinkingSteps],
             };
-            setMessages((m) => [...m, textMessage]);
+            
+            // Add text message to the active chat
+            if (activeChat) {
+              addMessageToChat(activeChat.id, textMessage);
+            }
             setLoadingState({ isLoading: false });
             setCurrentThinkingSteps([]); // Reset thinking steps after message is created
             break;
@@ -271,7 +289,11 @@ export function ChatInterface() {
                 timestamp: new Date().toISOString(),
                 thinkingSteps: [...currentThinkingSteps],
               };
-              setMessages((m) => [...m, genericMessage]);
+              
+              // Add generic message to the active chat
+              if (activeChat) {
+                addMessageToChat(activeChat.id, genericMessage);
+              }
               setLoadingState({ isLoading: false });
               setCurrentThinkingSteps([]); // Reset thinking steps after message is created
             }
@@ -291,7 +313,11 @@ export function ChatInterface() {
             { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
           ],
         };
-        setMessages((m) => [...m, assistant]);
+        
+        // Add assistant message to the active chat
+        if (activeChat) {
+          addMessageToChat(activeChat.id, assistant);
+        }
         setLoadingState({ isLoading: false });
         setCurrentThinkingSteps([]); // Reset thinking steps after message is created
       } else if (data.error) {
@@ -304,7 +330,11 @@ export function ChatInterface() {
           timestamp: new Date().toISOString(),
           thinkingSteps: [...currentThinkingSteps],
         };
-        setMessages((m) => [...m, errorMsg]);
+        
+        // Add error message to the active chat
+        if (activeChat) {
+          addMessageToChat(activeChat.id, errorMsg);
+        }
         setLoadingState({ isLoading: false });
         setCurrentThinkingSteps([]); // Reset thinking steps after message is created
       }
@@ -325,7 +355,11 @@ export function ChatInterface() {
         content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error instanceof Error ? error.message : 'WebSocket connection failed'}`,
         timestamp: new Date().toISOString(),
       };
-      setMessages((m) => [...m, errorMessage]);
+      
+      // Add error message to the active chat
+      if (activeChat) {
+        addMessageToChat(activeChat.id, errorMessage);
+      }
     });
 
     onClose((event) => {
@@ -337,16 +371,24 @@ export function ChatInterface() {
       
       setLoadingState({ isLoading: false });
     });
-  }, [onMessage, onError, onClose, connectionStatus, currentThinkingSteps]);
+  }, [onMessage, onError, onClose, connectionStatus, currentThinkingSteps, activeChat, addMessageToChat]);
 
   const sendMessage = async (text: string) => {
+    // Ensure we have an active chat
+    if (!activeChat) {
+      console.error("No active chat available");
+      return;
+    }
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: "user",
       content: text,
       timestamp: new Date().toISOString(),
     };
-    setMessages((m) => [...m, userMsg]);
+    
+    // Add user message to the active chat
+    addMessageToChat(activeChat.id, userMsg);
     lastSentUserMessageIdRef.current = userMsg.id;
     setLoadingState({ isLoading: true, stage: "analyzing" });
     setCurrentThinkingSteps([]); // Reset thinking steps for new query
@@ -378,7 +420,11 @@ export function ChatInterface() {
         timestamp: new Date().toISOString(),
         thinkingSteps: [...currentThinkingSteps],
       };
-      setMessages((m) => [...m, assistant]);
+      
+      // Add fallback message to the active chat
+      if (activeChat) {
+        addMessageToChat(activeChat.id, assistant);
+      }
       setCurrentThinkingSteps([]); // Reset thinking steps after message is created
     }
   };
