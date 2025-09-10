@@ -49,6 +49,7 @@ type VisualizationType =
 
 export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGraphProps) {
   const [activeViz, setActiveViz] = React.useState<VisualizationType>("map");
+  const hasSetInitialViz = React.useRef(false);
 
   // Determine available visualizations based on data
   const availableVisualizations = useMemo(() => {
@@ -71,13 +72,14 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
 
   // Set initial visualization based on graph analysis or data (only once)
   React.useEffect(() => {
-    if (graphAnalysis?.recommended_visualization && activeViz === "map") {
+    if (graphAnalysis?.recommended_visualization && !hasSetInitialViz.current) {
       const recommended = graphAnalysis.recommended_visualization as VisualizationType;
       if (availableVisualizations.includes(recommended)) {
         setActiveViz(recommended);
+        hasSetInitialViz.current = true;
       }
     }
-  }, [graphAnalysis?.recommended_visualization, availableVisualizations, activeViz]);
+  }, [graphAnalysis?.recommended_visualization, availableVisualizations]);
 
   const getVizIcon = (viz: VisualizationType) => {
     switch (viz) {
