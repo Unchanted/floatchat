@@ -9,7 +9,7 @@ import { ChatInput } from "./chat-input";
 import { WelcomeScreen } from "./welcome-screen";
 import { ThinkingIndicator } from "./thinking-indicator";
 import { Search, Sparkles, MoreHorizontal } from "lucide-react";
-import { WebSocketService } from "../../lib/websocket";
+import { useWebSocket } from "../../contexts/websocket-context";
 
 type Role = "user" | "assistant";
 
@@ -52,11 +52,12 @@ export interface WebSocketResponse {
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>({ isLoading: false });
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [activeTab, setActiveTab] = useState<'answer' | 'sources' | 'graph' | 'steps'>('answer');
   const [currentThinkingSteps, setCurrentThinkingSteps] = useState<string[]>([]);
-  const wsServiceRef = useRef<WebSocketService | null>(null);
   const lastSentUserMessageIdRef = useRef<string | null>(null);
+  
+  // Use the global websocket context
+  const { connectionStatus, isConnected, sendMessage: wsSendMessage, onMessage, onError, onClose } = useWebSocket();
 
   // Helper function to format result data for display
   const formatResultForDisplay = (result: any): string => {
@@ -113,262 +114,230 @@ export function ChatInterface() {
   };
 
   useEffect(() => {
-    // Initialize WebSocket connection
-    const initWebSocket = async () => {
-      try {
-        console.log("🔄 Initializing WebSocket connection...");
-        wsServiceRef.current = new WebSocketService();
-        
-        // Set up enhanced event handlers
-        wsServiceRef.current.onMessage((data: WebSocketResponse) => {
-          console.group("💬 Processing WebSocket Response");
-          console.log("Full response object:", data);
-          console.log("Stage:", data.stage);
-          console.log("Message:", data.message);
-          console.log("Result:", data.result);
-          console.log("Type:", data.type);
-          console.log("Content:", data.content);
-          console.groupEnd();
-          
-          // Handle different message types from backend
-          if (data.stage) {
-            switch (data.stage) {
-              case "analyzing":
-                console.log("🔎 Stage: Analyzing query");
-                console.log("🔍 Analyzing stage - thinking data:", data.thinking);
-                setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
-                // Accumulate thinking steps
-                if (data.thinking && data.thinking.length > 0) {
-                  setCurrentThinkingSteps(prev => {
-                    const newSteps = [...prev, ...(data.thinking || [])];
-                    console.log("📝 Updated thinking steps:", newSteps);
-                    return newSteps;
-                  });
-                }
-                break;
-                
-              case "sql_generation":
-                console.log("🛠 Stage: Generating SQL");
-                setLoadingState({ isLoading: true, stage: "searching", thinking: data.thinking });
-                // Accumulate thinking steps
-                if (data.thinking && data.thinking.length > 0) {
-                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
-                }
-                break;
-                
-              case "db_fetch":
-                console.log("📡 Stage: Fetching from database");
-                setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
-                // Accumulate thinking steps
-                if (data.thinking && data.thinking.length > 0) {
-                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
-                }
-                break;
-                
-              case "processing":
-                console.log("⚙️ Stage: Processing data");
-                setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
-                // Accumulate thinking steps
-                if (data.thinking && data.thinking.length > 0) {
-                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
-                }
-                break;
-                
-              case "completed":
-                console.log("✅ Stage: Processing completed");
-                // Keep loading state until we get the actual result
-                setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
-                // Accumulate thinking steps
-                if (data.thinking && data.thinking.length > 0) {
-                  setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
-                }
-                break;
-                
-              case "result":
-                console.log("📋 Stage: Final result received");
-                const resultPayload = data.result;
-                // Prefer single summary table if present
-                let tableData: Array<Record<string, any>> | undefined =
-                  resultPayload &&
-                  Array.isArray(resultPayload.summary) &&
-                  resultPayload.summary.length > 0 &&
-                  typeof resultPayload.summary[0] === 'object'
-                    ? (resultPayload.summary as Array<Record<string, any>>)
-                    : undefined;
-
-                // Otherwise, if summaries array exists (multi-point), pick the first non-empty summary
-                if (!tableData && Array.isArray(resultPayload?.summaries)) {
-                  const firstWithData = resultPayload.summaries.find((s: any) => Array.isArray(s?.summary) && s.summary.length > 0 && typeof s.summary[0] === 'object');
-                  if (firstWithData) {
-                    tableData = firstWithData.summary as Array<Record<string, any>>;
-                  }
-                }
-
-                console.log("💾 Creating assistant message with thinking steps:", currentThinkingSteps);
-                const assistant: Message = {
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  content: formatResultForDisplay(resultPayload),
-                  timestamp: new Date().toISOString(),
-                  tableData,
-                  fullTableData: (() => {
-                    // If backend included a full_summary, surface it for toggle
-                    if (resultPayload && Array.isArray(resultPayload.full_summary)) {
-                      return resultPayload.full_summary as Array<Record<string, any>>;
-                    }
-                    if (Array.isArray(resultPayload?.summaries)) {
-                      const firstWithFull = resultPayload.summaries.find((s: any) => Array.isArray(s?.full_summary));
-                      if (firstWithFull) return firstWithFull.full_summary as Array<Record<string, any>>;
-                    }
-                    return undefined;
-                  })(),
-                  queryMeta: (data as any).query_meta,
-                  thinkingSteps: [...currentThinkingSteps],
-                  sources: [
-                    { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
-                    { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
-                    { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
-                  ],
-                  // Add graph analysis to the message
-                  ...(resultPayload?.graph_analysis && { graphAnalysis: resultPayload.graph_analysis }),
-                };
-                setMessages((m) => [...m, assistant]);
-                setLoadingState({ isLoading: false });
-                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-                break;
-                
-              case "error":
-                console.error("❌ Stage: Error occurred");
-                const errorMessage: Message = {
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  content: `❌ **Error Processing Request**\n\n${data.message}\n\n${data.traceback ? `**Technical Details:**\n\`\`\`\n${data.traceback}\n\`\`\`` : ''}`,
-                  timestamp: new Date().toISOString(),
-                  thinkingSteps: [...currentThinkingSteps],
-                };
-                setMessages((m) => [...m, errorMessage]);
-                setLoadingState({ isLoading: false });
-                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-                break;
-                
-              case "no_function_call":
-                console.log("💭 Stage: No function call from Gemini");
-                const textMessage: Message = {
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  content: data.message || "I couldn't process your request as a structured query. Please try rephrasing your question about ocean data.",
-                  timestamp: new Date().toISOString(),
-                  thinkingSteps: [...currentThinkingSteps],
-                };
-                setMessages((m) => [...m, textMessage]);
-                setLoadingState({ isLoading: false });
-                setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-                break;
-                
-              default:
-                console.warn("⚠️ Unknown message stage:", data.stage);
-                // Handle as generic message
-                if (data.message) {
-                  const genericMessage: Message = {
-                    id: crypto.randomUUID(),
-                    role: "assistant",
-                    content: data.message,
-                    timestamp: new Date().toISOString(),
-                    thinkingSteps: [...currentThinkingSteps],
-                  };
-                  setMessages((m) => [...m, genericMessage]);
-                  setLoadingState({ isLoading: false });
-                  setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-                }
+    // Set up message handlers using the global websocket context
+    onMessage((data: WebSocketResponse) => {
+      console.group("💬 Processing WebSocket Response");
+      console.log("Full response object:", data);
+      console.log("Stage:", data.stage);
+      console.log("Message:", data.message);
+      console.log("Result:", data.result);
+      console.log("Type:", data.type);
+      console.log("Content:", data.content);
+      console.groupEnd();
+      
+      // Handle different message types from backend
+      if (data.stage) {
+        switch (data.stage) {
+          case "analyzing":
+            console.log("🔎 Stage: Analyzing query");
+            console.log("🔍 Analyzing stage - thinking data:", data.thinking);
+            setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
+            // Accumulate thinking steps
+            if (data.thinking && data.thinking.length > 0) {
+              setCurrentThinkingSteps(prev => {
+                const newSteps = [...prev, ...(data.thinking || [])];
+                console.log("📝 Updated thinking steps:", newSteps);
+                return newSteps;
+              });
             }
-          } else if (data.type && data.content) {
-            // Handle original format messages
-            console.log("📨 Handling original format message");
+            break;
+            
+          case "sql_generation":
+            console.log("🛠 Stage: Generating SQL");
+            setLoadingState({ isLoading: true, stage: "searching", thinking: data.thinking });
+            // Accumulate thinking steps
+            if (data.thinking && data.thinking.length > 0) {
+              setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+            }
+            break;
+            
+          case "db_fetch":
+            console.log("📡 Stage: Fetching from database");
+            setLoadingState({ isLoading: true, stage: "analyzing", thinking: data.thinking });
+            // Accumulate thinking steps
+            if (data.thinking && data.thinking.length > 0) {
+              setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+            }
+            break;
+            
+          case "processing":
+            console.log("⚙️ Stage: Processing data");
+            setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
+            // Accumulate thinking steps
+            if (data.thinking && data.thinking.length > 0) {
+              setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+            }
+            break;
+            
+          case "completed":
+            console.log("✅ Stage: Processing completed");
+            // Keep loading state until we get the actual result
+            setLoadingState({ isLoading: true, stage: "generating", thinking: data.thinking });
+            // Accumulate thinking steps
+            if (data.thinking && data.thinking.length > 0) {
+              setCurrentThinkingSteps(prev => [...prev, ...(data.thinking || [])]);
+            }
+            break;
+            
+          case "result":
+            console.log("📋 Stage: Final result received");
+            const resultPayload = data.result;
+            // Prefer single summary table if present
+            let tableData: Array<Record<string, any>> | undefined =
+              resultPayload &&
+              Array.isArray(resultPayload.summary) &&
+              resultPayload.summary.length > 0 &&
+              typeof resultPayload.summary[0] === 'object'
+                ? (resultPayload.summary as Array<Record<string, any>>)
+                : undefined;
+
+            // Otherwise, if summaries array exists (multi-point), pick the first non-empty summary
+            if (!tableData && Array.isArray(resultPayload?.summaries)) {
+              const firstWithData = resultPayload.summaries.find((s: any) => Array.isArray(s?.summary) && s.summary.length > 0 && typeof s.summary[0] === 'object');
+              if (firstWithData) {
+                tableData = firstWithData.summary as Array<Record<string, any>>;
+              }
+            }
+
+            console.log("💾 Creating assistant message with thinking steps:", currentThinkingSteps);
             const assistant: Message = {
               id: crypto.randomUUID(),
               role: "assistant",
-              content: data.content,
+              content: formatResultForDisplay(resultPayload),
               timestamp: new Date().toISOString(),
+              tableData,
+              fullTableData: (() => {
+                // If backend included a full_summary, surface it for toggle
+                if (resultPayload && Array.isArray(resultPayload.full_summary)) {
+                  return resultPayload.full_summary as Array<Record<string, any>>;
+                }
+                if (Array.isArray(resultPayload?.summaries)) {
+                  const firstWithFull = resultPayload.summaries.find((s: any) => Array.isArray(s?.full_summary));
+                  if (firstWithFull) return firstWithFull.full_summary as Array<Record<string, any>>;
+                }
+                return undefined;
+              })(),
+              queryMeta: (data as any).query_meta,
               thinkingSteps: [...currentThinkingSteps],
               sources: [
                 { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
                 { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
                 { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
               ],
+              // Add graph analysis to the message
+              ...(resultPayload?.graph_analysis && { graphAnalysis: resultPayload.graph_analysis }),
             };
             setMessages((m) => [...m, assistant]);
             setLoadingState({ isLoading: false });
             setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-          } else if (data.error) {
-            // Handle direct error messages
-            console.error("❌ Direct error message received");
-            const errorMsg: Message = {
+            break;
+            
+          case "error":
+            console.error("❌ Stage: Error occurred");
+            const errorMessage: Message = {
               id: crypto.randomUUID(),
               role: "assistant",
-              content: `❌ **Error**: ${data.error}`,
+              content: `❌ **Error Processing Request**\n\n${data.message}\n\n${data.traceback ? `**Technical Details:**\n\`\`\`\n${data.traceback}\n\`\`\`` : ''}`,
               timestamp: new Date().toISOString(),
               thinkingSteps: [...currentThinkingSteps],
             };
-            setMessages((m) => [...m, errorMsg]);
+            setMessages((m) => [...m, errorMessage]);
             setLoadingState({ isLoading: false });
             setCurrentThinkingSteps([]); // Reset thinking steps after message is created
-          }
-        });
-
-        wsServiceRef.current.onError((error) => {
-          console.group("❌ WebSocket Error");
-          console.error("Error details:", error);
-          console.log("Connection status before error:", connectionStatus);
-          console.groupEnd();
-          
-          setConnectionStatus('disconnected');
-          setLoadingState({ isLoading: false });
-          
-          // Show user-friendly error message
-          const errorMessage: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error instanceof Error ? error.message : 'WebSocket connection failed'}`,
-            timestamp: new Date().toISOString(),
-          };
-          setMessages((m) => [...m, errorMessage]);
-        });
-
-        wsServiceRef.current.onClose((event) => {
-          console.group("🔌 WebSocket Connection Closed");
-          console.log("Close code:", event.code);
-          console.log("Close reason:", event.reason);
-          console.log("Was clean:", event.wasClean);
-          console.groupEnd();
-          
-          setConnectionStatus('disconnected');
-          setLoadingState({ isLoading: false });
-        });
-
-        // Connect to WebSocket
-        await wsServiceRef.current.connect();
-        console.log("✅ WebSocket connected successfully");
-        setConnectionStatus('connected');
-        
-        // Ensure loading state is reset on connection
+            break;
+            
+          case "no_function_call":
+            console.log("💭 Stage: No function call from Gemini");
+            const textMessage: Message = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: data.message || "I couldn't process your request as a structured query. Please try rephrasing your question about ocean data.",
+              timestamp: new Date().toISOString(),
+              thinkingSteps: [...currentThinkingSteps],
+            };
+            setMessages((m) => [...m, textMessage]);
+            setLoadingState({ isLoading: false });
+            setCurrentThinkingSteps([]); // Reset thinking steps after message is created
+            break;
+            
+          default:
+            console.warn("⚠️ Unknown message stage:", data.stage);
+            // Handle as generic message
+            if (data.message) {
+              const genericMessage: Message = {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: data.message,
+                timestamp: new Date().toISOString(),
+                thinkingSteps: [...currentThinkingSteps],
+              };
+              setMessages((m) => [...m, genericMessage]);
+              setLoadingState({ isLoading: false });
+              setCurrentThinkingSteps([]); // Reset thinking steps after message is created
+            }
+        }
+      } else if (data.type && data.content) {
+        // Handle original format messages
+        console.log("📨 Handling original format message");
+        const assistant: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.content,
+          timestamp: new Date().toISOString(),
+          thinkingSteps: [...currentThinkingSteps],
+          sources: [
+            { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
+            { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
+            { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
+          ],
+        };
+        setMessages((m) => [...m, assistant]);
         setLoadingState({ isLoading: false });
-      } catch (error) {
-        console.group("❌ WebSocket Initialization Failed");
-        console.error("Error:", error);
-        console.groupEnd();
-        setConnectionStatus('disconnected');
+        setCurrentThinkingSteps([]); // Reset thinking steps after message is created
+      } else if (data.error) {
+        // Handle direct error messages
+        console.error("❌ Direct error message received");
+        const errorMsg: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `❌ **Error**: ${data.error}`,
+          timestamp: new Date().toISOString(),
+          thinkingSteps: [...currentThinkingSteps],
+        };
+        setMessages((m) => [...m, errorMsg]);
+        setLoadingState({ isLoading: false });
+        setCurrentThinkingSteps([]); // Reset thinking steps after message is created
       }
-    };
+    });
 
-    initWebSocket();
+    onError((error) => {
+      console.group("❌ WebSocket Error");
+      console.error("Error details:", error);
+      console.log("Connection status before error:", connectionStatus);
+      console.groupEnd();
+      
+      setLoadingState({ isLoading: false });
+      
+      // Show user-friendly error message
+      const errorMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error instanceof Error ? error.message : 'WebSocket connection failed'}`,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((m) => [...m, errorMessage]);
+    });
 
-    // Cleanup on unmount
-    return () => {
-      if (wsServiceRef.current) {
-        wsServiceRef.current.disconnect();
-      }
-    };
-  }, []);
+    onClose((event) => {
+      console.group("🔌 WebSocket Connection Closed");
+      console.log("Close code:", event.code);
+      console.log("Close reason:", event.reason);
+      console.log("Was clean:", event.wasClean);
+      console.groupEnd();
+      
+      setLoadingState({ isLoading: false });
+    });
+  }, [onMessage, onError, onClose, connectionStatus, currentThinkingSteps]);
 
   const sendMessage = async (text: string) => {
     const userMsg: Message = {
@@ -384,23 +353,19 @@ export function ChatInterface() {
     setActiveTab('answer'); // Reset to answer tab for new queries
     
     // Ensure connection status is connected before sending
-    if (connectionStatus !== 'connected') {
+    if (!isConnected) {
       console.warn('Connection status is not connected:', connectionStatus);
       setLoadingState({ isLoading: false });
       return;
     }
 
     try {
-      if (wsServiceRef.current && wsServiceRef.current.isConnected()) {
-        console.group("📤 Sending WebSocket Message");
-        console.log("Query:", text);
-        console.log("Message object:", { query: text });
-        console.groupEnd();
-        
-        wsServiceRef.current.sendMessage({ query: text });
-      } else {
-        throw new Error("WebSocket is not connected");
-      }
+      console.group("📤 Sending WebSocket Message");
+      console.log("Query:", text);
+      console.log("Message object:", { query: text });
+      console.groupEnd();
+      
+      wsSendMessage({ query: text });
     } catch (error) {
       console.error("Failed to send message:", error);
       setLoadingState({ isLoading: false });
@@ -546,7 +511,7 @@ export function ChatInterface() {
           <div className="max-w-4xl mx-auto px-6 py-6">
             <ChatInput 
               onSend={sendMessage} 
-              disabled={loadingState.isLoading || connectionStatus !== 'connected'} 
+              disabled={loadingState.isLoading || !isConnected} 
             />
             {/* Debug info - remove in production */}
             {process.env.NODE_ENV === 'development' && (

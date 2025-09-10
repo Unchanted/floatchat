@@ -10,7 +10,8 @@ import {
 } from "react-simple-maps";
 import { indianOceanBuoys, type Buoy } from "./data/buoys";
 import { Button } from "../../../../../packages/ui/src/components/button";
-import { MapPin, Waves, Navigation } from "lucide-react";
+import { MapPin, Waves, Navigation, Wifi, WifiOff } from "lucide-react";
+import { useWebSocket } from "../../contexts/websocket-context";
 
 // Using a lightweight world TopoJSON from Natural Earth
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
@@ -21,10 +22,14 @@ export function OnboardWorld() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedBuoy, setSelectedBuoy] = useState<Buoy | null>(null);
   const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null);
+  
+  // Get websocket connection status
+  const { connectionStatus, isConnected } = useWebSocket();
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 500);
     return () => clearTimeout(timer);
+    
   }, []);
 
   useEffect(() => {
@@ -237,6 +242,21 @@ export function OnboardWorld() {
               <h1 className="text-xl font-semibold text-gray-800">FloatChat</h1>
               <p className="text-sm text-gray-500">Real-time ocean insights</p>
             </div>
+          </div>
+          
+          {/* Connection Status Indicator */}
+          <div className="flex items-center gap-2 bg-white/90 backdrop-blur-md border border-gray-200/20 rounded-full px-4 py-2 shadow-lg">
+            {isConnected ? (
+              <Wifi className="h-4 w-4 text-green-600" />
+            ) : (
+              <WifiOff className="h-4 w-4 text-red-500" />
+            )}
+            <span className={`text-xs font-medium ${
+              isConnected ? 'text-green-600' : 'text-red-500'
+            }`}>
+              {connectionStatus === 'connecting' ? 'Connecting...' : 
+               connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
+            </span>
           </div>
         </div>
       </div>
