@@ -49,8 +49,7 @@ sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFuncti
 
 # Create collection
 chat_embeddings_collection = chroma_client.get_or_create_collection(
-    name="ChatEmbeddings",
-    embedding_function=sentence_transformer_ef
+    name="ChatEmbeddings", embedding_function=sentence_transformer_ef
 )
 
 select_region_function = {
@@ -115,8 +114,11 @@ select_region_function = {
     },
 }
 
-# Helper function chroma 
-def search_similar_chats(query: str, n_results: int = 3, similarity_threshold: float = 0.8) -> List[Dict]:
+
+# Helper function chroma
+def search_similar_chats(
+    query: str, n_results: int = 3, similarity_threshold: float = 0.8
+) -> List[Dict]:
     """
     Search for similar previous chats in ChromaDB and return relevant context
     """
@@ -125,26 +127,32 @@ def search_similar_chats(query: str, n_results: int = 3, similarity_threshold: f
         results = chat_embeddings_collection.query(
             query_texts=[query],
             n_results=n_results,
-            include=["documents", "metadatas", "distances"]
+            include=["documents", "metadatas", "distances"],
         )
-        
+
         similar_chats = []
-        if results['documents'] and results['documents'][0]:
-            for i, (doc, metadata, distance) in enumerate(zip(
-                results['documents'][0], 
-                results['metadatas'][0], 
-                results['distances'][0]
-            )):
+        if results["documents"] and results["documents"][0]:
+            for i, (doc, metadata, distance) in enumerate(
+                zip(
+                    results["documents"][0],
+                    results["metadatas"][0],
+                    results["distances"][0],
+                )
+            ):
                 # Only include chats that are similar enough (lower distance = more similar)
                 if distance < similarity_threshold:
-                    similar_chats.append({
-                        "query": metadata.get("query", "Unknown query"),
-                        "response": doc[:500] + "..." if len(doc) > 500 else doc,  # Truncate long responses
-                        "timestamp": metadata.get("timestamp", "Unknown time"),
-                        "distance": distance,
-                        "query_meta": metadata.get("query_meta", "{}")
-                    })
-        
+                    similar_chats.append(
+                        {
+                            "query": metadata.get("query", "Unknown query"),
+                            "response": doc[:500] + "..."
+                            if len(doc) > 500
+                            else doc,  # Truncate long responses
+                            "timestamp": metadata.get("timestamp", "Unknown time"),
+                            "distance": distance,
+                            "query_meta": metadata.get("query_meta", "{}"),
+                        }
+                    )
+
         return similar_chats
     except Exception as e:
         print(f"Error searching similar chats: {e}")
@@ -184,18 +192,21 @@ def get_default_date_range():
 
 
 def create_genai_client() -> genai.Client:
-    api_key = "AIzaSyD-7cXQPrKkYIJIsnnlTjXeo2drONhmIU0"
+    api_key = "AIzaSyCnuNbQPQGTt0uy-DZtzBlKVOnK_2y8Zh0"
     if not api_key:
         raise RuntimeError("Environment variable GOOGLE_API_KEY is required")
     client = genai.Client(api_key=api_key)
     # Note: some genai SDKs accept api_key as Client(api_key=...), adapt if needed.
     return client
 
+
 # --- Helper: generate dynamic analysis using Gemini ---
-def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any]) -> str:
+def generate_data_analysis(
+    query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any]
+) -> str:
     """Generate a dynamic analysis of the ocean data based on the user's query and results."""
     client = create_genai_client()
-    
+
     # Prepare data summary for Gemini
     data_summary = ""
     if data_result.get("summary"):
@@ -208,15 +219,15 @@ def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: 
         summaries = data_result["summaries"]
         successful = [s for s in summaries if not s.get("error")]
         data_summary = f"Found data from {len(successful)} out of {len(summaries)} requested locations"
-    
+
     # Create analysis prompt
     analysis_prompt = f"""
 You are an ocean data analyst. A user asked: "{query}"
 
 Query details:
-- Mode: {query_meta.get('mode', 'unknown')}
-- Time period: {query_meta.get('date_start', 'N/A')} to {query_meta.get('date_end', 'N/A')}
-- Variables requested: {query_meta.get('selected_variables', [])}
+- Mode: {query_meta.get("mode", "unknown")}
+- Time period: {query_meta.get("date_start", "N/A")} to {query_meta.get("date_end", "N/A")}
+- Variables requested: {query_meta.get("selected_variables", [])}
 
 Data results:
 {data_summary}
@@ -257,7 +268,7 @@ RESPONSE STYLE GUIDELINES:
 
 Choose the appropriate style based on the user's query, but ALWAYS include rich Markdown formatting.
 """
-    
+
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -270,7 +281,9 @@ Choose the appropriate style based on the user's query, but ALWAYS include rich 
 
 
 # --- Helper: call Gemini with function declarations ---
-def gemini_select_region(query: str, similar_chats: List[Dict] = None, conversation_history: List[str] = None) -> Dict[str, Any]:
+def gemini_select_region(
+    query: str, similar_chats: List[Dict] = None, conversation_history: List[str] = None
+) -> Dict[str, Any]:
     """Send the query to Gemini with context from similar previous chats and conversation history.
 
     Returns a dict with keys:
@@ -288,19 +301,23 @@ def gemini_select_region(query: str, similar_chats: List[Dict] = None, conversat
             context_prompt += f"   **Previous Response**: {chat['response']}\n"
             context_prompt += f"   **Query Details**: {chat['query_meta']}\n"
             context_prompt += f"   **Similarity**: {1 - chat['distance']:.2f}\n"
-        
+
         context_prompt += "\nYou can use this context to better understand the user's request and provide more accurate geographical parameters.\n"
 
     # Add conversation history context
-    if conversation_history and len(conversation_history) > 1:  # Only if there's previous conversation
+    if (
+        conversation_history and len(conversation_history) > 1
+    ):  # Only if there's previous conversation
         context_prompt += "\n\n**CURRENT CONVERSATION HISTORY:**\n"
         # Show last 5 queries to avoid overwhelming the context
-        recent_history = conversation_history[-6:-1]  # Exclude current query, show last 5
+        recent_history = conversation_history[
+            -6:-1
+        ]  # Exclude current query, show last 5
         for i, prev_query in enumerate(recent_history, 1):
             context_prompt += f"\n{i}. {prev_query}\n"
-        
+
         context_prompt += "\nThis is the conversation history from this session. Use it to understand the context and continuation of the user's requests.\n"
-    
+
     if context_prompt:
         context_prompt += "---\n\n"
 
@@ -332,38 +349,43 @@ def gemini_select_region(query: str, similar_chats: List[Dict] = None, conversat
         # fallback: return plain text
         return {"text": response.text}
 
-def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, Any]) -> Dict[str, Any]:
+
+def generate_graph_analysis(
+    data_result: Dict[str, Any], query_meta: Dict[str, Any]
+) -> Dict[str, Any]:
     """Generate graph analysis and recommendations for ocean data visualization."""
     try:
         # Extract data for analysis
         data_points = []
         if data_result.get("summary") and isinstance(data_result["summary"], list):
             data_points = data_result["summary"]
-        elif data_result.get("summaries") and isinstance(data_result["summaries"], list):
+        elif data_result.get("summaries") and isinstance(
+            data_result["summaries"], list
+        ):
             # Flatten summaries from multiple points
             for summary in data_result["summaries"]:
                 if summary.get("summary") and isinstance(summary["summary"], list):
                     data_points.extend(summary["summary"])
-        
+
         if not data_points:
             return {
                 "recommended_visualization": "map",
                 "reasoning": "No data points available for analysis",
                 "available_visualizations": ["map"],
-                "data_insights": []
+                "data_insights": [],
             }
-        
+
         # Analyze data characteristics
         unique_locations = set()
         variables = set()
         time_points = []
-        
+
         for point in data_points:
             if isinstance(point, dict):
                 # Count unique locations
                 if "LATITUDE" in point and "LONGITUDE" in point:
                     unique_locations.add((point["LATITUDE"], point["LONGITUDE"]))
-                
+
                 # Identify available variables
                 if "TEMP" in point and point["TEMP"] is not None:
                     variables.add("temperature")
@@ -371,20 +393,20 @@ def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, A
                     variables.add("salinity")
                 if "PRES" in point and point["PRES"] is not None:
                     variables.add("pressure")
-                
+
                 # Collect time points
                 if "TIME" in point and point["TIME"]:
                     try:
                         time_points.append(point["TIME"])
                     except:
                         pass
-        
+
         # Determine recommended visualization
         recommended_viz = "map"
         reasoning = ""
         available_viz = ["map"]
         insights = []
-        
+
         # Add variable-specific visualizations
         if "temperature" in variables:
             available_viz.append("temperature_map")
@@ -392,12 +414,14 @@ def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, A
             available_viz.append("salinity_map")
         if "pressure" in variables:
             available_viz.append("pressure_map")
-        
+
         # Determine best visualization based on data characteristics
         if len(unique_locations) == 1 and len(data_points) > 10:
             recommended_viz = "time_series"
             reasoning = "Single location with multiple measurements - ideal for time series analysis"
-            insights.append("Time series will show temporal variations at this location")
+            insights.append(
+                "Time series will show temporal variations at this location"
+            )
         elif "temperature" in variables:
             recommended_viz = "temperature_map"
             reasoning = "Temperature data available - temperature map shows spatial thermal patterns"
@@ -408,25 +432,33 @@ def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, A
             insights.append("Salinity map reveals ocean water composition")
         elif len(unique_locations) > 5:
             recommended_viz = "map"
-            reasoning = "Multiple locations - map visualization shows spatial distribution"
-            insights.append("Map view provides geographic context for ocean measurements")
+            reasoning = (
+                "Multiple locations - map visualization shows spatial distribution"
+            )
+            insights.append(
+                "Map view provides geographic context for ocean measurements"
+            )
         else:
             recommended_viz = "map"
             reasoning = "Default map visualization for oceanographic data"
             insights.append("Map view shows geographic distribution of measurements")
-        
+
         # Add data insights
-        insights.append(f"Data contains {len(data_points)} measurements from {len(unique_locations)} locations")
+        insights.append(
+            f"Data contains {len(data_points)} measurements from {len(unique_locations)} locations"
+        )
         if len(variables) > 1:
             insights.append(f"Multiple variables available: {', '.join(variables)}")
         if len(time_points) > 1:
             try:
                 time_range = max(time_points) - min(time_points)
                 if time_range.days > 30:
-                    insights.append("Data spans more than 30 days - shows temporal trends")
+                    insights.append(
+                        "Data spans more than 30 days - shows temporal trends"
+                    )
             except:
                 pass
-        
+
         return {
             "recommended_visualization": recommended_viz,
             "reasoning": reasoning,
@@ -436,24 +468,31 @@ def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, A
                 "total_points": len(data_points),
                 "unique_locations": len(unique_locations),
                 "variables": list(variables),
-                "time_range": f"{min(time_points)} to {max(time_points)}" if time_points else "Unknown"
-            }
+                "time_range": f"{min(time_points)} to {max(time_points)}"
+                if time_points
+                else "Unknown",
+            },
         }
-        
+
     except Exception as e:
         print(f"Error generating graph analysis: {e}")
         return {
             "recommended_visualization": "map",
             "reasoning": "Error analyzing data - defaulting to map view",
             "available_visualizations": ["map"],
-            "data_insights": ["Data analysis failed"]
+            "data_insights": ["Data analysis failed"],
         }
 
 
-def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any], similar_chats: List[Dict] = None) -> str:
+def generate_data_analysis(
+    query: str,
+    data_result: Dict[str, Any],
+    query_meta: Dict[str, Any],
+    similar_chats: List[Dict] = None,
+) -> str:
     """Generate a dynamic analysis of the ocean data based on the user's query and results."""
     client = create_genai_client()
-    
+
     # Prepare data summary for Gemini
     data_summary = ""
     if data_result.get("summary"):
@@ -466,14 +505,16 @@ def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: 
         summaries = data_result["summaries"]
         successful = [s for s in summaries if not s.get("error")]
         data_summary = f"Found data from {len(successful)} out of {len(summaries)} requested locations"
-    
+
     # Build context from similar chats
     context_section = ""
     if similar_chats:
         context_section = "\n**PREVIOUS SIMILAR ANALYSES:**\n"
         for i, chat in enumerate(similar_chats, 1):
             context_section += f"\n{i}. **Similar Query**: {chat['query']}\n"
-            context_section += f"   **Previous Analysis**: {chat['response'][:300]}...\n"
+            context_section += (
+                f"   **Previous Analysis**: {chat['response'][:300]}...\n"
+            )
         context_section += "\nUse these previous analyses as reference for style and insights, but focus on the current data.\n\n"
 
     # Create analysis prompt
@@ -483,9 +524,9 @@ You are an ocean data analyst. A user asked: "{query}"
 {context_section}
 
 Query details:
-- Mode: {query_meta.get('mode', 'unknown')}
-- Time period: {query_meta.get('date_start', 'N/A')} to {query_meta.get('date_end', 'N/A')}
-- Variables requested: {query_meta.get('selected_variables', [])}
+- Mode: {query_meta.get("mode", "unknown")}
+- Time period: {query_meta.get("date_start", "N/A")} to {query_meta.get("date_end", "N/A")}
+- Variables requested: {query_meta.get("selected_variables", [])}
 
 Data results:
 {data_summary}
@@ -526,7 +567,7 @@ RESPONSE STYLE GUIDELINES:
 
 Choose the appropriate style based on the user's query, but ALWAYS include rich Markdown formatting.
 """
-    
+
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
@@ -591,8 +632,8 @@ def fetch_argopy_for_box(
     try:
         # Instead of taking first 50 records (which may all be from same location/time),
         # sample unique lat/lon/time combinations to get diverse data
-        unique_combinations = ds[['LATITUDE', 'LONGITUDE', 'TIME']].drop_duplicates()
-        
+        unique_combinations = ds[["LATITUDE", "LONGITUDE", "TIME"]].drop_duplicates()
+
         # Take up to 50 unique combinations, or all if less than 50
         if len(unique_combinations) <= 50:
             sampled_data = unique_combinations
@@ -600,14 +641,18 @@ def fetch_argopy_for_box(
             # Sample every nth record to get diverse data
             step = max(1, len(unique_combinations) // 50)
             sampled_data = unique_combinations.iloc[::step].head(50)
-        
+
         # Now get the full records for these unique combinations
         # Merge back with original data to get all columns
-        merged_data = sampled_data.merge(ds, on=['LATITUDE', 'LONGITUDE', 'TIME'], how='left')
-        
+        merged_data = sampled_data.merge(
+            ds, on=["LATITUDE", "LONGITUDE", "TIME"], how="left"
+        )
+
         # Take one record per unique combination (they should all be the same except for depth-related columns)
-        final_data = merged_data.drop_duplicates(subset=['LATITUDE', 'LONGITUDE', 'TIME'])
-        
+        final_data = merged_data.drop_duplicates(
+            subset=["LATITUDE", "LONGITUDE", "TIME"]
+        )
+
         raw_records = final_data.to_dict(orient="records")
         sample_records = sanitize(raw_records)
     except Exception:
@@ -665,30 +710,38 @@ async def websocket_endpoint(ws: WebSocket):
 
             # Stage 1: Analyzing
             await ws.send_text(
-                json.dumps({
-                    "stage": "analyzing", 
-                    "message": "🔎 Analyzing your query",
-                    "thinking": [
-                        "Understanding the ocean data request",
-                        "Searching for similar previous queries",  # Add this line
-                        "Identifying geographical parameters",
-                        "Determining time range requirements",
-                        "Selecting relevant ocean variables",
-                        "Validating query parameters",
-                        "Preparing for AI processing"
-                    ]
-                })
+                json.dumps(
+                    {
+                        "stage": "analyzing",
+                        "message": "🔎 Analyzing your query",
+                        "thinking": [
+                            "Understanding the ocean data request",
+                            "Searching for similar previous queries",  # Add this line
+                            "Identifying geographical parameters",
+                            "Determining time range requirements",
+                            "Selecting relevant ocean variables",
+                            "Validating query parameters",
+                            "Preparing for AI processing",
+                        ],
+                    }
+                )
             )
 
             # Search for similar chats before calling Gemini
-            similar_chats = search_similar_chats(query, n_results=3, similarity_threshold=0.7)
+            similar_chats = search_similar_chats(
+                query, n_results=3, similarity_threshold=0.7
+            )
             print(f"Found {len(similar_chats)} similar previous chats")
 
             loop = asyncio.get_running_loop()
             try:
                 gemini_result = await loop.run_in_executor(
-                        None, gemini_select_region, query, similar_chats, conversation_history
-                    )
+                    None,
+                    gemini_select_region,
+                    query,
+                    similar_chats,
+                    conversation_history,
+                )
             except Exception as exc:
                 await ws.send_text(
                     json.dumps(
@@ -713,8 +766,8 @@ async def websocket_endpoint(ws: WebSocket):
                                 "Building database query parameters",
                                 "Validating query constraints",
                                 "Optimizing query performance",
-                                "Preparing data retrieval strategy"
-                            ]
+                                "Preparing data retrieval strategy",
+                            ],
                         }
                     )
                 )
@@ -754,8 +807,8 @@ async def websocket_endpoint(ws: WebSocket):
                                         "Applying time range constraints",
                                         "Retrieving temperature, salinity, and pressure data",
                                         "Validating data quality and completeness",
-                                        "Organizing results by location and time"
-                                    ]
+                                        "Organizing results by location and time",
+                                    ],
                                 }
                             )
                         )
@@ -766,14 +819,19 @@ async def websocket_endpoint(ws: WebSocket):
                                 raise ValueError(
                                     "Gemini returned mode 'box' but no box provided"
                                 )
-                            
+
                             # Try the original box first
                             try:
                                 raw_result = await loop.run_in_executor(
                                     None, fetch_argopy_for_box, box, date_min, date_max
                                 )
                                 query_meta["box"] = box
-                            except (FileNotFoundError, FSTimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
+                            except (
+                                FileNotFoundError,
+                                FSTimeoutError,
+                                asyncio.TimeoutError,
+                                aiohttp.ClientError,
+                            ):
                                 # If original box fails, try with a broader area
                                 print(f"Original box failed, trying broader area...")
                                 broader_box = {
@@ -784,11 +842,17 @@ async def websocket_endpoint(ws: WebSocket):
                                 }
                                 try:
                                     raw_result = await loop.run_in_executor(
-                                        None, fetch_argopy_for_box, broader_box, date_min, date_max
+                                        None,
+                                        fetch_argopy_for_box,
+                                        broader_box,
+                                        date_min,
+                                        date_max,
                                     )
                                     query_meta["box"] = broader_box
                                     query_meta["expanded_search"] = True
-                                    print(f"Successfully found data with broader search area")
+                                    print(
+                                        f"Successfully found data with broader search area"
+                                    )
                                 except Exception:
                                     # Re-raise the original exception if broader search also fails
                                     raise
@@ -826,7 +890,7 @@ async def websocket_endpoint(ws: WebSocket):
                         await ws.send_text(
                             json.dumps(
                                 {
-                                    "stage": "processing", 
+                                    "stage": "processing",
                                     "message": "⚙️ Processing data",
                                     "thinking": [
                                         "Cleaning and validating ocean measurements",
@@ -835,8 +899,8 @@ async def websocket_endpoint(ws: WebSocket):
                                         "Preparing data for visualization",
                                         "Generating summary statistics",
                                         "Creating data quality reports",
-                                        "Finalizing analysis results"
-                                    ]
+                                        "Finalizing analysis results",
+                                    ],
                                 }
                             )
                         )
@@ -924,58 +988,70 @@ async def websocket_endpoint(ws: WebSocket):
                         await ws.send_text(
                             json.dumps(
                                 {
-                                    "stage": "completed", 
+                                    "stage": "completed",
                                     "message": "✅ Generating analysis",
                                     "thinking": [
                                         "Finalizing data processing",
                                         "Preparing response format",
                                         "Generating user-friendly summary",
-                                        "Ready to display results"
-                                    ]
+                                        "Ready to display results",
+                                    ],
                                 }
                             )
                         )
-                        
+
                         # Add a small delay to let the thinking animation complete
                         await asyncio.sleep(2)
-                        
+
                         # Generate dynamic analysis using Gemini
                         # Generate dynamic analysis using Gemini
                         try:
                             dynamic_analysis = await loop.run_in_executor(
-                                None, generate_data_analysis, query, result, query_meta, similar_chats
+                                None,
+                                generate_data_analysis,
+                                query,
+                                result,
+                                query_meta,
+                                similar_chats,
                             )
                             result["dynamic_analysis"] = dynamic_analysis
-                            
+
                             # Generate graph analysis for visualization
                             graph_analysis = generate_graph_analysis(result, query_meta)
                             result["graph_analysis"] = graph_analysis
-                            
+
                             # Store user query and its dynamic analysis in Chroma DB
                             doc_id = str(uuid4())
                             chat_embeddings_collection.add(
                                 ids=[doc_id],
                                 documents=[dynamic_analysis],
-                                metadatas=[{
-                                    "query": query,
-                                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                                    "query_meta": json.dumps(query_meta),
-                                    "id": doc_id,
-                                }]
+                                metadatas=[
+                                    {
+                                        "query": query,
+                                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                                        "query_meta": json.dumps(query_meta),
+                                        "id": doc_id,
+                                    }
+                                ],
                             )
                             print(f"Stored analysis with ID: {doc_id}")
-                            
+
                             # Log similar chats found
                             if similar_chats:
-                                print(f"Used context from {len(similar_chats)} similar previous queries")
+                                print(
+                                    f"Used context from {len(similar_chats)} similar previous queries"
+                                )
                                 for chat in similar_chats:
-                                    print(f"  - Similar: '{chat['query'][:50]}...' (similarity: {1-chat['distance']:.2f})")
-                                    
+                                    print(
+                                        f"  - Similar: '{chat['query'][:50]}...' (similarity: {1 - chat['distance']:.2f})"
+                                    )
+
                         except Exception as e:
                             print(f"Failed to generate dynamic analysis: {e}")
-                            result["dynamic_analysis"] = "Analysis generation failed, showing data results."
+                            result["dynamic_analysis"] = (
+                                "Analysis generation failed, showing data results."
+                            )
 
-                        
                         await ws.send_text(
                             json.dumps(
                                 {
@@ -996,8 +1072,12 @@ async def websocket_endpoint(ws: WebSocket):
                         FileNotFoundError,
                     ) as exc:
                         # Soft-fail on network/data errors: return a friendly result instead of an error stage
-                        error_type = "timeout" if isinstance(exc, (FSTimeoutError, asyncio.TimeoutError)) else "no_data"
-                        
+                        error_type = (
+                            "timeout"
+                            if isinstance(exc, (FSTimeoutError, asyncio.TimeoutError))
+                            else "no_data"
+                        )
+
                         if error_type == "no_data":
                             friendly_message = (
                                 "## No Data Found\n\n"
@@ -1014,7 +1094,7 @@ async def websocket_endpoint(ws: WebSocket):
                                 "The **ocean data source** timed out while fetching results.\n\n"
                                 "**Solution:** Try a smaller date range or a narrower region, then try again."
                             )
-                        
+
                         await ws.send_text(
                             json.dumps(
                                 {
@@ -1071,4 +1151,3 @@ def index():
         </html>
         """
     )
-
