@@ -176,11 +176,11 @@ def normalize_date_range(date_min: Optional[str], date_max: Optional[str]):
 
 
 def get_default_date_range():
+    # Use a more reasonable default date range with available data
+    # Instead of "last month" which might be in the future, use last year
     today = datetime.date.today()
-    first_of_this_month = today.replace(day=1)
-    last_month_end = first_of_this_month - datetime.timedelta(days=1)
-    last_month_start = last_month_end.replace(day=1)
-    return last_month_start.isoformat(), last_month_end.isoformat()
+    last_year = today.year - 1
+    return f"{last_year}-01-01", f"{last_year}-12-31"
 
 
 def create_genai_client() -> genai.Client:
@@ -332,6 +332,124 @@ def gemini_select_region(query: str, similar_chats: List[Dict] = None, conversat
         # fallback: return plain text
         return {"text": response.text}
 
+def generate_graph_analysis(data_result: Dict[str, Any], query_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate graph analysis and recommendations for ocean data visualization."""
+    try:
+        # Extract data for analysis
+        data_points = []
+        if data_result.get("summary") and isinstance(data_result["summary"], list):
+            data_points = data_result["summary"]
+        elif data_result.get("summaries") and isinstance(data_result["summaries"], list):
+            # Flatten summaries from multiple points
+            for summary in data_result["summaries"]:
+                if summary.get("summary") and isinstance(summary["summary"], list):
+                    data_points.extend(summary["summary"])
+        
+        if not data_points:
+            return {
+                "recommended_visualization": "map",
+                "reasoning": "No data points available for analysis",
+                "available_visualizations": ["map"],
+                "data_insights": []
+            }
+        
+        # Analyze data characteristics
+        unique_locations = set()
+        variables = set()
+        time_points = []
+        
+        for point in data_points:
+            if isinstance(point, dict):
+                # Count unique locations
+                if "LATITUDE" in point and "LONGITUDE" in point:
+                    unique_locations.add((point["LATITUDE"], point["LONGITUDE"]))
+                
+                # Identify available variables
+                if "TEMP" in point and point["TEMP"] is not None:
+                    variables.add("temperature")
+                if "PSAL" in point and point["PSAL"] is not None:
+                    variables.add("salinity")
+                if "PRES" in point and point["PRES"] is not None:
+                    variables.add("pressure")
+                
+                # Collect time points
+                if "TIME" in point and point["TIME"]:
+                    try:
+                        time_points.append(point["TIME"])
+                    except:
+                        pass
+        
+        # Determine recommended visualization
+        recommended_viz = "map"
+        reasoning = ""
+        available_viz = ["map"]
+        insights = []
+        
+        # Add variable-specific visualizations
+        if "temperature" in variables:
+            available_viz.append("temperature_map")
+        if "salinity" in variables:
+            available_viz.append("salinity_map")
+        if "pressure" in variables:
+            available_viz.append("pressure_map")
+        
+        # Determine best visualization based on data characteristics
+        if len(unique_locations) == 1 and len(data_points) > 10:
+            recommended_viz = "time_series"
+            reasoning = "Single location with multiple measurements - ideal for time series analysis"
+            insights.append("Time series will show temporal variations at this location")
+        elif "temperature" in variables:
+            recommended_viz = "temperature_map"
+            reasoning = "Temperature data available - temperature map shows spatial thermal patterns"
+            insights.append("Temperature map reveals ocean thermal structure")
+        elif "salinity" in variables:
+            recommended_viz = "salinity_map"
+            reasoning = "Salinity data available - salinity map shows water composition patterns"
+            insights.append("Salinity map reveals ocean water composition")
+        elif len(unique_locations) > 5:
+            recommended_viz = "map"
+            reasoning = "Multiple locations - map visualization shows spatial distribution"
+            insights.append("Map view provides geographic context for ocean measurements")
+        else:
+            recommended_viz = "map"
+            reasoning = "Default map visualization for oceanographic data"
+            insights.append("Map view shows geographic distribution of measurements")
+        
+        # Add data insights
+        insights.append(f"Data contains {len(data_points)} measurements from {len(unique_locations)} locations")
+        if len(variables) > 1:
+            insights.append(f"Multiple variables available: {', '.join(variables)}")
+        if len(time_points) > 1:
+            try:
+                time_range = max(time_points) - min(time_points)
+                if time_range.days > 30:
+                    insights.append("Data spans more than 30 days - shows temporal trends")
+            except:
+                pass
+        
+        return {
+            "recommended_visualization": recommended_viz,
+            "reasoning": reasoning,
+            "available_visualizations": available_viz,
+            "data_insights": insights,
+            "data_summary": {
+                "total_points": len(data_points),
+                "unique_locations": len(unique_locations),
+                "variables": list(variables),
+                "time_range": f"{min(time_points)} to {max(time_points)}" if time_points else "Unknown"
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error generating graph analysis: {e}")
+        return {
+            "recommended_visualization": "map",
+            "reasoning": "Error analyzing data - defaulting to map view",
+            "available_visualizations": ["map"],
+            "data_insights": ["Data analysis failed"]
+        }
+
+
 def generate_data_analysis(query: str, data_result: Dict[str, Any], query_meta: Dict[str, Any], similar_chats: List[Dict] = None) -> str:
     """Generate a dynamic analysis of the ocean data based on the user's query and results."""
     client = create_genai_client()
@@ -471,7 +589,26 @@ def fetch_argopy_for_box(
         return str(value)
 
     try:
-        raw_records = ds.head(50).to_dict(orient="records")
+        # Instead of taking first 50 records (which may all be from same location/time),
+        # sample unique lat/lon/time combinations to get diverse data
+        unique_combinations = ds[['LATITUDE', 'LONGITUDE', 'TIME']].drop_duplicates()
+        
+        # Take up to 50 unique combinations, or all if less than 50
+        if len(unique_combinations) <= 50:
+            sampled_data = unique_combinations
+        else:
+            # Sample every nth record to get diverse data
+            step = max(1, len(unique_combinations) // 50)
+            sampled_data = unique_combinations.iloc[::step].head(50)
+        
+        # Now get the full records for these unique combinations
+        # Merge back with original data to get all columns
+        merged_data = sampled_data.merge(ds, on=['LATITUDE', 'LONGITUDE', 'TIME'], how='left')
+        
+        # Take one record per unique combination (they should all be the same except for depth-related columns)
+        final_data = merged_data.drop_duplicates(subset=['LATITUDE', 'LONGITUDE', 'TIME'])
+        
+        raw_records = final_data.to_dict(orient="records")
         sample_records = sanitize(raw_records)
     except Exception:
         # Fallback: stringify if conversion fails
@@ -809,6 +946,10 @@ async def websocket_endpoint(ws: WebSocket):
                                 None, generate_data_analysis, query, result, query_meta, similar_chats
                             )
                             result["dynamic_analysis"] = dynamic_analysis
+                            
+                            # Generate graph analysis for visualization
+                            graph_analysis = generate_graph_analysis(result, query_meta)
+                            result["graph_analysis"] = graph_analysis
                             
                             # Store user query and its dynamic analysis in Chroma DB
                             doc_id = str(uuid4())

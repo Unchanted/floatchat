@@ -29,6 +29,7 @@ import {
   TableCell,
   TableCaption,
 } from "../../../../../packages/ui/src/components/table";
+import { OceanDataGraph, OceanDataPoint, GraphAnalysis } from "../graphs/ocean-data-graph";
 
 export function ChatMessage({ 
   message, 
@@ -391,9 +392,46 @@ export function ChatMessage({
       )}
 
       {activeTab === 'graph' && (
-        <div className="text-center py-8 text-muted-foreground">
-          <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>Graph visualization coming soon.</p>
+        <div className="space-y-4">
+          {(() => {
+            // Convert table data to graph data format
+            const graphData: OceanDataPoint[] = [];
+            if (Array.isArray(message.tableData) && message.tableData.length > 0) {
+              message.tableData.forEach((row: any) => {
+                if (row.LATITUDE && row.LONGITUDE && row.TIME) {
+                  graphData.push({
+                    LATITUDE: Number(row.LATITUDE),
+                    LONGITUDE: Number(row.LONGITUDE),
+                    TIME: row.TIME,
+                    TEMP: row.TEMP ? Number(row.TEMP) : undefined,
+                    PSAL: row.PSAL ? Number(row.PSAL) : undefined,
+                    PRES: row.PRES ? Number(row.PRES) : undefined,
+                  });
+                }
+              });
+            }
+
+            // Extract graph analysis from message if available
+            const graphAnalysis: GraphAnalysis | undefined = message.graphAnalysis;
+
+            if (graphData.length > 0) {
+              return (
+                <OceanDataGraph 
+                  data={graphData} 
+                  queryMeta={message.queryMeta}
+                  graphAnalysis={graphAnalysis}
+                />
+              );
+            } else {
+              return (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No data available for visualization.</p>
+                  <p className="text-xs mt-2">Graph visualization requires ocean data with location and time information.</p>
+                </div>
+              );
+            }
+          })()}
         </div>
       )}
 

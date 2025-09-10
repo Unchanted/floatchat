@@ -23,6 +23,7 @@ export interface Message {
   fullTableData?: Array<Record<string, any>>;
   queryMeta?: any;
   thinkingSteps?: string[];
+  graphAnalysis?: any;
 }
 
 interface LoadingState {
@@ -228,6 +229,8 @@ export function ChatInterface() {
                     { title: "Ocean Climate Portal - INCOIS", url: "https://incois.gov.in" },
                     { title: "World Ocean Database", url: "https://www.ncei.noaa.gov/wod" },
                   ],
+                  // Add graph analysis to the message
+                  ...(resultPayload?.graph_analysis && { graphAnalysis: resultPayload.graph_analysis }),
                 };
                 setMessages((m) => [...m, assistant]);
                 setLoadingState({ isLoading: false });
@@ -325,7 +328,7 @@ export function ChatInterface() {
           const errorMessage: Message = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error.message || 'WebSocket connection failed'}`,
+            content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error instanceof Error ? error.message : 'WebSocket connection failed'}`,
             timestamp: new Date().toISOString(),
           };
           setMessages((m) => [...m, errorMessage]);
