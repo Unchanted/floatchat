@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../../lib/utils";
 import { IconMenu2, IconX, IconPlus, IconHistory, IconMessage, IconSettings, IconHelpCircle, IconUser } from "@tabler/icons-react";
+import { usePathname } from "next/navigation";
 
 const mockHistory = [] as Array<{ id: string; title: string; time: string }>;
 
@@ -25,6 +26,10 @@ interface NewSidebarProps {
 export function NewSidebar({ children, links = [], footer, className, variant = "solid" }: NewSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const pathname = usePathname();
+  
+  // Show logo on welcome page and during chat interactions
+  const shouldShowLogo = pathname === '/welcome';
 
   return (
     <>
@@ -46,9 +51,13 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
         {/* Header */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-              <span className="text-primary-foreground font-bold text-sm">F</span>
-            </div>
+            {shouldShowLogo ? (
+              <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8 shrink-0" />
+            ) : (
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
+                <span className="text-primary-foreground font-bold text-sm">F</span>
+              </div>
+            )}
             <motion.span
               className="font-semibold text-foreground whitespace-nowrap"
               initial={{ opacity: 0, x: -10 }}
@@ -188,9 +197,13 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-card border-b border-border flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">F</span>
-          </div>
+          {shouldShowLogo ? (
+            <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8" />
+          ) : (
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-sm">F</span>
+            </div>
+          )}
           <span className="font-semibold text-foreground">FloatChat</span>
         </div>
         <button
@@ -225,9 +238,13 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
               {/* Mobile Header */}
               <div className="p-4 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                    <span className="text-primary-foreground font-bold text-sm">F</span>
-                  </div>
+                  {shouldShowLogo ? (
+                    <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8" />
+                  ) : (
+                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                      <span className="text-primary-foreground font-bold text-sm">F</span>
+                    </div>
+                  )}
                   <span className="font-semibold text-foreground">FloatChat</span>
                 </div>
                 <button

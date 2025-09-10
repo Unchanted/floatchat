@@ -54,8 +54,10 @@ export function OnboardWorld() {
   };
 
   const handleBuoyClick = (buoy: Buoy) => {
+    console.log("Buoy clicked:", buoy.name);
     setSelectedBuoy(buoy);
     setTimeout(() => {
+      console.log("Redirecting to /welcome...");
       router.push("/welcome");
     }, 800);
   };
@@ -127,26 +129,43 @@ export function OnboardWorld() {
               coordinates={buoy.coordinates}
             >
               <g>
+                {/* Invisible larger clickable area */}
+                <circle
+                  r={25}
+                  fill="transparent"
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Large area clicked for buoy:", buoy.name);
+                    handleBuoyClick(buoy);
+                  }}
+                  onKeyDown={(e) => handleBuoyKeyDown(e, buoy)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Navigate to ${buoy.name} in ${buoy.region}`}
+                />
+                
                 {/* Multiple pulse rings for depth */}
                 <circle
                   r={20}
                   fill="url(#blackGradient)"
                   fillOpacity={hoveredBuoy?.id === buoy.id ? 0.2 : 0.1}
-                  className="animate-ping transition-all duration-300"
+                  className="animate-ping transition-all duration-300 pointer-events-none"
                   style={{ animationDelay: `${index * 300}ms`, animationDuration: '3s' }}
                 />
                 <circle
                   r={15}
                   fill="url(#blackGradient)"
                   fillOpacity={hoveredBuoy?.id === buoy.id ? 0.25 : 0.15}
-                  className="animate-ping transition-all duration-300"
+                  className="animate-ping transition-all duration-300 pointer-events-none"
                   style={{ animationDelay: `${index * 300 + 500}ms`, animationDuration: '2.5s' }}
                 />
                 <circle
                   r={10}
                   fill="url(#blackGradient)"
                   fillOpacity={hoveredBuoy?.id === buoy.id ? 0.3 : 0.2}
-                  className="animate-ping transition-all duration-300"
+                  className="animate-ping transition-all duration-300 pointer-events-none"
                   style={{ animationDelay: `${index * 300 + 1000}ms`, animationDuration: '2s' }}
                 />
                 
@@ -161,7 +180,12 @@ export function OnboardWorld() {
                   } ${hoveredBuoy?.id === buoy.id ? 'scale-110 drop-shadow-xl' : ''}`}
                   onMouseEnter={() => handleBuoyMouseEnter(buoy)}
                   onMouseLeave={handleBuoyMouseLeave}
-                  onClick={() => handleBuoyClick(buoy)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Circle clicked for buoy:", buoy.name);
+                    handleBuoyClick(buoy);
+                  }}
                   onKeyDown={(e) => handleBuoyKeyDown(e, buoy)}
                   tabIndex={0}
                   role="button"
@@ -173,14 +197,14 @@ export function OnboardWorld() {
                   r={4}
                   fill="white"
                   fillOpacity={0.9}
-                  className="animate-pulse"
+                  className="animate-pulse pointer-events-none"
                 />
                 
                 {/* Data point indicator */}
                 <circle
                   r={1.5}
                   fill="url(#blackGradient)"
-                  className="animate-pulse"
+                  className="animate-pulse pointer-events-none"
                   style={{ animationDelay: `${index * 200}ms` }}
                 />
               </g>
@@ -208,11 +232,9 @@ export function OnboardWorld() {
       }`}>
         <div className="flex items-center justify-between p-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-gray-800 to-black rounded-xl flex items-center justify-center shadow-lg">
-              <Waves className="h-5 w-5 text-white" />
-            </div>
+            <img src="/logo.svg" alt="FloatChat Logo" className="w-10 h-10" />
             <div>
-              <h1 className="text-xl font-semibold text-gray-800">OceanData</h1>
+              <h1 className="text-xl font-semibold text-gray-800">FloatChat</h1>
               <p className="text-sm text-gray-500">Real-time ocean insights</p>
             </div>
           </div>
@@ -303,8 +325,8 @@ export function OnboardWorld() {
       {selectedBuoy && (
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-40 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-gray-800 to-black rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <Waves className="h-8 w-8 text-white" />
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg">
+              <img src="/logo.svg" alt="FloatChat Logo" className="w-10 h-10" />
             </div>
             <p className="text-lg font-semibold text-gray-800">Loading {selectedBuoy.name} data...</p>
           </div>

@@ -38,21 +38,31 @@ export class WebSocketService {
       try {
         this.socket = new WebSocket(this.url);
 
+        // Set a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
+            this.socket.close();
+            reject(new Error(`WebSocket connection timeout to ${this.url}. Please check if the backend server is running.`));
+          }
+        }, 5000); // 5 second timeout
+
         this.socket.onopen = () => {
           console.log("Connected to WebSocket");
+          clearTimeout(connectionTimeout);
           this.reconnectAttempts = 0;
           resolve();
         };
 
         this.socket.onerror = (error) => {
           console.error("WebSocket error:", error);
+          clearTimeout(connectionTimeout);
           // If a user-provided error handler exists, call it
           if (this.errorCallback) {
             this.errorCallback(error);
           }
           // Reject initial connection attempt errors
           if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
-            reject(error);
+            reject(new Error(`WebSocket connection failed to ${this.url}. Please ensure the backend server is running.`));
           }
         };
 
@@ -94,10 +104,18 @@ export class WebSocketService {
       setTimeout(() => {
         this.connect().catch((error) => {
           console.error("Reconnection failed:", error);
+          // If max attempts reached, notify error callback
+          if (this.reconnectAttempts >= this.maxReconnectAttempts && this.errorCallback) {
+            this.errorCallback(new Error("Max reconnection attempts reached. Backend server may be unavailable."));
+          }
         });
       }, this.reconnectDelay * this.reconnectAttempts);
     } else {
       console.error("Max reconnection attempts reached");
+      // Notify error callback about max attempts reached
+      if (this.errorCallback) {
+        this.errorCallback(new Error("Max reconnection attempts reached. Backend server may be unavailable."));
+      }
     }
   }
 

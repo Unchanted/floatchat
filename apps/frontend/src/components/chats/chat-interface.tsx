@@ -320,6 +320,15 @@ export function ChatInterface() {
           
           setConnectionStatus('disconnected');
           setLoadingState({ isLoading: false });
+          
+          // Show user-friendly error message
+          const errorMessage: Message = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `❌ **Connection Error**\n\nUnable to connect to the ocean data analysis system. Please ensure the backend server is running and try again.\n\n**Error Details:** ${error.message || 'WebSocket connection failed'}`,
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((m) => [...m, errorMessage]);
         });
 
         wsServiceRef.current.onClose((event) => {
