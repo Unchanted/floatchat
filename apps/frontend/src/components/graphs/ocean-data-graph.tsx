@@ -69,15 +69,15 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
     return viz;
   }, [data]);
 
-  // Set initial visualization based on graph analysis or data
+  // Set initial visualization based on graph analysis or data (only once)
   React.useEffect(() => {
-    if (graphAnalysis?.recommended_visualization) {
+    if (graphAnalysis?.recommended_visualization && activeViz === "map") {
       const recommended = graphAnalysis.recommended_visualization as VisualizationType;
       if (availableVisualizations.includes(recommended)) {
         setActiveViz(recommended);
       }
     }
-  }, [graphAnalysis, availableVisualizations]);
+  }, [graphAnalysis?.recommended_visualization, availableVisualizations, activeViz]);
 
   const getVizIcon = (viz: VisualizationType) => {
     switch (viz) {
@@ -102,6 +102,19 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
       case "scatter_plot": return "Scatter Plot";
       case "histogram": return "Distribution";
       default: return "Map";
+    }
+  };
+
+  const getVizDescription = (viz: VisualizationType) => {
+    switch (viz) {
+      case "map": return "Shows the geographical distribution of Argo float locations with basic information.";
+      case "temperature_map": return "Displays temperature data as colored markers on a map, showing spatial temperature patterns.";
+      case "salinity_map": return "Visualizes salinity measurements across different locations using color-coded markers.";
+      case "pressure_map": return "Shows pressure data distribution with depth information represented by color intensity.";
+      case "time_series": return "Plots temperature changes over time to identify temporal trends and patterns.";
+      case "scatter_plot": return "Examines the relationship between temperature and salinity (T-S diagram).";
+      case "histogram": return "Shows the frequency distribution of temperature values in the dataset.";
+      default: return "Basic location visualization of the data points.";
     }
   };
 
@@ -161,9 +174,17 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-primary"></div>
-              <span className="text-sm font-medium">Recommended: {getVizLabel(activeViz)}</span>
+              <span className="text-sm font-medium">
+                {activeViz === graphAnalysis.recommended_visualization 
+                  ? `Recommended: ${getVizLabel(activeViz)}` 
+                  : `Current: ${getVizLabel(activeViz)}`}
+              </span>
             </div>
-            <p className="text-sm text-muted-foreground">{graphAnalysis.reasoning}</p>
+            <p className="text-sm text-muted-foreground">
+              {activeViz === graphAnalysis.recommended_visualization 
+                ? graphAnalysis.reasoning 
+                : getVizDescription(activeViz)}
+            </p>
             {graphAnalysis.data_insights && graphAnalysis.data_insights.length > 0 && (
               <div className="text-xs text-muted-foreground">
                 <strong>Insights:</strong> {graphAnalysis.data_insights.join(" • ")}
@@ -244,6 +265,10 @@ function TemperatureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta
   const plotData = useMemo(() => {
     const tempData = data.filter(d => d.TEMP !== undefined && d.TEMP !== null);
     
+    if (tempData.length === 0) {
+      return [];
+    }
+    
     return [{
       type: "scattermapbox",
       mode: "markers",
@@ -268,6 +293,17 @@ function TemperatureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta
       name: "Temperature"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <Thermometer className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No temperature data available for visualization</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     mapbox: {
@@ -298,6 +334,10 @@ function SalinityMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   const plotData = useMemo(() => {
     const salinityData = data.filter(d => d.PSAL !== undefined && d.PSAL !== null);
     
+    if (salinityData.length === 0) {
+      return [];
+    }
+    
     return [{
       type: "scattermapbox",
       mode: "markers",
@@ -322,6 +362,17 @@ function SalinityMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
       name: "Salinity"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <Droplets className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No salinity data available for visualization</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     mapbox: {
@@ -352,6 +403,10 @@ function PressureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   const plotData = useMemo(() => {
     const pressureData = data.filter(d => d.PRES !== undefined && d.PRES !== null);
     
+    if (pressureData.length === 0) {
+      return [];
+    }
+    
     return [{
       type: "scattermapbox",
       mode: "markers",
@@ -376,6 +431,17 @@ function PressureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
       name: "Pressure"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <Gauge className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No pressure data available for visualization</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     mapbox: {
@@ -408,6 +474,10 @@ function TimeSeriesChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMet
       .filter(d => d.TIME && d.TEMP !== undefined && d.TEMP !== null)
       .sort((a, b) => new Date(a.TIME).getTime() - new Date(b.TIME).getTime());
 
+    if (timeData.length === 0) {
+      return [];
+    }
+
     return [{
       type: "scatter",
       mode: "lines+markers",
@@ -423,6 +493,17 @@ function TimeSeriesChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMet
       name: "Temperature"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <LineChart className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No time series data available for visualization</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     title: "Temperature Over Time",
@@ -446,6 +527,10 @@ function ScatterPlot({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   const plotData = useMemo(() => {
     const scatterData = data.filter(d => d.TEMP !== undefined && d.PSAL !== undefined && d.TEMP !== null && d.PSAL !== null);
     
+    if (scatterData.length === 0) {
+      return [];
+    }
+    
     return [{
       type: "scatter",
       mode: "markers",
@@ -465,6 +550,17 @@ function ScatterPlot({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
       name: "T-S Relationship"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <Activity className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No temperature-salinity data available for scatter plot</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     title: "Temperature-Salinity Relationship",
@@ -488,6 +584,10 @@ function HistogramChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta
   const plotData = useMemo(() => {
     const tempData = data.filter(d => d.TEMP !== undefined && d.TEMP !== null).map(d => d.TEMP!);
     
+    if (tempData.length === 0) {
+      return [];
+    }
+    
     return [{
       type: "histogram",
       x: tempData,
@@ -499,6 +599,17 @@ function HistogramChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta
       name: "Temperature Distribution"
     }];
   }, [data]);
+
+  if (plotData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="text-center">
+          <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+          <p>No temperature data available for histogram</p>
+        </div>
+      </div>
+    );
+  }
 
   const layout = {
     title: "Temperature Distribution",
