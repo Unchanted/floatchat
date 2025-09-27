@@ -1,21 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { Card } from "../../../../../packages/ui/src/components/card";
-import {
-  Avatar,
-  AvatarFallback,
-} from "../../../../../packages/ui/src/components/avatar";
 import { Button } from "../../../../../packages/ui/src/components/button";
 import { 
   ExternalLink, 
-  Bot, 
-  User, 
   Copy, 
   Check,
-  Search,
-  ChevronDown,
-  ChevronUp
+  Search
 } from "lucide-react";
 import type { Message } from "./chat-interface";
 import ReactMarkdown from "react-markdown";
@@ -29,7 +20,7 @@ import {
   TableCell,
   TableCaption,
 } from "../../../../../packages/ui/src/components/table";
-import { OceanDataGraph, OceanDataPoint, GraphAnalysis } from "../graphs/ocean-data-graph";
+import { OceanDataGraph, OceanDataPoint, GraphAnalysis as OceanGraphAnalysis } from "../graphs/ocean-data-graph";
 
 export function ChatMessage({ 
   message, 
@@ -72,13 +63,13 @@ export function ChatMessage({
 
   const formatLat = (lat: number) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"}`;
   const formatLon = (lon: number) => `${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
-  const buildFriendlyQuerySummary = (meta: any): string[] => {
+  const buildFriendlyQuerySummary = (meta: Record<string, unknown> | null | undefined): string[] => {
     const lines: string[] = [];
     if (meta?.date_start && meta?.date_end) {
       lines.push(`Time window: ${meta.date_start} → ${meta.date_end}`);
     }
-    if (meta?.box) {
-      const b = meta.box;
+    if (meta?.box && typeof meta.box === 'object' && meta.box !== null) {
+      const b = meta.box as Record<string, unknown>;
       const latMin = Number(b.lat_min);
       const latMax = Number(b.lat_max);
       const lonMin = Number(b.lon_min);
@@ -190,56 +181,44 @@ export function ChatMessage({
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                ul: ({ node, ...props }) => (
+                ul: ({ ...props }) => (
                   <ul className="list-disc pl-6 my-2 space-y-1" {...props} />
                 ),
-                ol: ({ node, ...props }) => (
+                ol: ({ ...props }) => (
                   <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />
                 ),
-                li: ({ node, ...props }) => <li className="leading-relaxed" {...props} />,
-                em: ({ node, ...props }) => <em className="italic" {...props} />,
-                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-                blockquote: ({ node, ...props }) => (
+                li: ({ ...props }) => <li className="leading-relaxed" {...props} />,
+                em: ({ ...props }) => <em className="italic" {...props} />,
+                strong: ({ ...props }) => <strong className="font-semibold" {...props} />,
+                blockquote: ({ ...props }) => (
                   <blockquote className="border-l-2 border-muted-foreground/30 pl-4 italic my-3" {...props} />
                 ),
-                a: ({ node, ...props }) => (
+                a: ({ ...props }) => (
                   <a {...props} target="_blank" rel="noreferrer" />
                 ),
-           p: ({ children, ...props }: any) => {
-             // Check if this paragraph contains a code block (pre element)
-             const hasCodeBlock = React.Children.toArray(children).some((child: any) => 
-               child && typeof child === 'object' && child.type === 'pre'
-             );
-             
-             if (hasCodeBlock) {
-               // If it contains a code block, don't wrap it in p
-               return <>{children}</>;
-             }
-             return <p className="leading-relaxed" {...props}>{children}</p>;
-           },
-           pre: ({ children, ...props }: any) => {
-             // Custom pre component to ensure proper structure
-             return (
-               <pre className="rounded-md bg-muted p-3 overflow-x-auto text-sm my-4" {...props}>
-                 {children}
-               </pre>
-             );
-           },
-           code: ({ inline, className, children, ...props }: any) => {
-             if (inline) {
-               return (
-                 <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm`} {...props}>
-                   {children}
-                 </code>
-               );
-             }
-             // For block code, just return the code element (pre will be handled by pre component)
-             return (
-               <code className="text-sm" {...props}>
-                 {children}
-               </code>
-             );
-           },
+                p: ({ children, ...props }) => (
+                  <p className="leading-relaxed" {...props}>{children}</p>
+                ),
+                pre: ({ children, ...props }) => (
+                  <pre className="rounded-md bg-muted p-3 overflow-x-auto text-sm my-4" {...props}>
+                    {children}
+                  </pre>
+                ),
+                code: ({ ...props }) => {
+                  const { inline, className, children, ...restProps } = props as { inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown };
+                  if (inline) {
+                    return (
+                      <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm`} {...restProps}>
+                        {children}
+                      </code>
+                    );
+                  }
+                  return (
+                    <code className="text-sm" {...restProps}>
+                      {children}
+                    </code>
+                  );
+                },
               }}
             >
               {message.content}
@@ -284,7 +263,7 @@ export function ChatMessage({
             <div className="mt-4">
               {(() => {
                 // Enable toggle if we detect full_summary in message content structure
-                const hasFull = !!(message as any)?.queryMeta; // meta always present
+                const hasFull = !!message?.queryMeta; // meta always present
                 return (
                   <div className="flex items-center justify-between mb-3">
                     <div className="font-semibold text-foreground">Data Results</div>
@@ -303,7 +282,7 @@ export function ChatMessage({
               })()}
               {(() => {
                 // If showFull is true and backend provided full_summary, use it
-                const full: Array<Record<string, any>> | undefined = (message as any).fullTableData;
+                const full: Array<Record<string, unknown>> | undefined = message.fullTableData;
                 const dataset = showFull && Array.isArray(full) && full.length > 0 ? full : message.tableData;
                 const rows = dataset.slice(0, 50);
                 const columns = Object.keys(rows[0] || {});
@@ -397,12 +376,12 @@ export function ChatMessage({
             // Convert table data to graph data format
             const graphData: OceanDataPoint[] = [];
             if (Array.isArray(message.tableData) && message.tableData.length > 0) {
-              message.tableData.forEach((row: any) => {
+              message.tableData.forEach((row: Record<string, unknown>) => {
                 if (row.LATITUDE && row.LONGITUDE && row.TIME) {
                   graphData.push({
                     LATITUDE: Number(row.LATITUDE),
                     LONGITUDE: Number(row.LONGITUDE),
-                    TIME: row.TIME,
+                    TIME: String(row.TIME),
                     TEMP: row.TEMP ? Number(row.TEMP) : undefined,
                     PSAL: row.PSAL ? Number(row.PSAL) : undefined,
                     PRES: row.PRES ? Number(row.PRES) : undefined,
@@ -412,7 +391,7 @@ export function ChatMessage({
             }
 
             // Extract graph analysis from message if available
-            const graphAnalysis: GraphAnalysis | undefined = message.graphAnalysis;
+            const graphAnalysis: OceanGraphAnalysis | undefined = message.graphAnalysis as OceanGraphAnalysis | undefined;
 
             if (graphData.length > 0) {
               return (

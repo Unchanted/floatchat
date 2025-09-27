@@ -9,7 +9,7 @@ import { MapPin } from "lucide-react";
 import { useEffect } from "react";
 
 function WelcomePageContent() {
-  const { chats, activeChatId, createNewChat } = useChat();
+  const { chats, createNewChat } = useChat();
 
   // Auto-create a new chat if no chats exist
   useEffect(() => {

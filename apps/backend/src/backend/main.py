@@ -5,6 +5,7 @@ import traceback
 from typing import Any, Dict, List, Optional
 from fsspec.exceptions import FSTimeoutError
 import aiohttp
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
@@ -26,6 +27,8 @@ from chromadb.utils import embedding_functions
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from uuid import uuid4
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 app = FastAPI()
 
@@ -192,7 +195,8 @@ def get_default_date_range():
 
 
 def create_genai_client() -> genai.Client:
-    api_key = "AIzaSyCnuNbQPQGTt0uy-DZtzBlKVOnK_2y8Zh0"
+    # api_key = "AIzaSyCnuNbQPQGTt0uy-DZtzBlKVOnK_2y8Zh0"
+    api_key = GOOGLE_API_KEY
     if not api_key:
         raise RuntimeError("Environment variable GOOGLE_API_KEY is required")
     client = genai.Client(api_key=api_key)

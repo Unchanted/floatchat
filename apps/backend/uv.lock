@@ -123,6 +123,7 @@ dependencies = [
     { name = "langchain-chroma" },
     { name = "langchain-openai" },
     { name = "python-dateutil" },
+    { name = "python-dotenv" },
     { name = "sentence-transformers" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -136,6 +137,7 @@ requires-dist = [
     { name = "langchain-chroma", specifier = ">=0.2.5" },
     { name = "langchain-openai", specifier = ">=0.3.32" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "sentence-transformers", specifier = ">=5.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
 ]

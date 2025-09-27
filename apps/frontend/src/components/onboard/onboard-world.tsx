@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ComposableMap,
   Geographies,
@@ -10,7 +11,7 @@ import {
 } from "react-simple-maps";
 import { indianOceanBuoys, type Buoy } from "./data/buoys";
 import { Button } from "../../../../../packages/ui/src/components/button";
-import { MapPin, Waves, Navigation, Wifi, WifiOff } from "lucide-react";
+import { MapPin, Navigation, Wifi, WifiOff } from "lucide-react";
 import { useWebSocket } from "../../contexts/websocket-context";
 
 // Using a lightweight world TopoJSON from Natural Earth
@@ -237,7 +238,7 @@ export function OnboardWorld() {
       }`}>
         <div className="flex items-center justify-between p-6">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="FloatChat Logo" className="w-10 h-10" />
+            <Image src="/logo.svg" alt="FloatChat Logo" width={40} height={40} className="w-10 h-10" />
             <div>
               <h1 className="text-xl font-semibold text-gray-800">FloatChat</h1>
               <p className="text-sm text-gray-500">Real-time ocean insights</p>
@@ -346,7 +347,7 @@ export function OnboardWorld() {
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-40 flex items-center justify-center">
           <div className="text-center">
             <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg">
-              <img src="/logo.svg" alt="FloatChat Logo" className="w-10 h-10" />
+              <Image src="/logo.svg" alt="FloatChat Logo" width={40} height={40} className="w-10 h-10" />
             </div>
             <p className="text-lg font-semibold text-gray-800">Loading {selectedBuoy.name} data...</p>
           </div>

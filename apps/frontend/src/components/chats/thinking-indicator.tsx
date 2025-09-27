@@ -160,7 +160,7 @@ export function ThinkingIndicator({ thinking, stage, isVisible }: ThinkingIndica
         
           {/* Thinking steps */}
           <div className="space-y-3">
-            {steps.map((step, index) => (
+            {steps.map((step) => (
               <div
                 key={step.id}
                 className={`group flex items-start gap-3 p-4 rounded-lg border transition-all duration-500 ease-out ${

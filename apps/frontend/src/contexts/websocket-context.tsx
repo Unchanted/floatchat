@@ -9,7 +9,7 @@ interface WebSocketContextType {
   isConnected: boolean;
   sendMessage: (message: { query: string }) => void;
   onMessage: (callback: (data: WebSocketResponse) => void) => void;
-  onError: (callback: (error: Event) => void) => void;
+  onError: (callback: (error: Event | Error) => void) => void;
   onClose: (callback: (event: CloseEvent) => void) => void;
 }
 
@@ -75,7 +75,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   };
 
-  const onError = (callback: (error: Event) => void) => {
+  const onError = (callback: (error: Event | Error) => void) => {
     if (wsServiceRef.current) {
       wsServiceRef.current.onError(callback);
     }

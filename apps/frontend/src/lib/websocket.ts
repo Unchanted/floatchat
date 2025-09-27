@@ -12,7 +12,7 @@ export interface WebSocketResponse {
   // Backend stage messages
   stage?: string;
   message?: string;
-  result?: any;
+  result?: Record<string, unknown>;
   error?: string;
   traceback?: string;
   thinking?: string[];
@@ -26,7 +26,7 @@ export class WebSocketService {
   private reconnectDelay = 1000; // 1 second
   // Store callbacks set before a connection exists
   private messageCallback?: (data: WebSocketResponse) => void;
-  private errorCallback?: (error: Event) => void;
+  private errorCallback?: (error: Event | Error) => void;
   private closeCallback?: (event: CloseEvent) => void;
 
   constructor(url: string = "ws://localhost:8000/ws") {
@@ -145,7 +145,7 @@ export class WebSocketService {
     }
   }
 
-  onError(callback: (error: Event) => void): void {
+  onError(callback: (error: Event | Error) => void): void {
     this.errorCallback = callback;
     if (this.socket) {
       this.socket.onerror = callback;

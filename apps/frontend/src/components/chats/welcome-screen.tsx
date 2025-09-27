@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Button } from "../../../../../packages/ui/src/components/button";
 import {
   Thermometer,
@@ -77,7 +78,7 @@ export function WelcomeScreen({ onPick }: { onPick: (q: string) => void }) {
   };
 
   return (
-    <div className="relative flex-1 flex items-center justify-center bg-white dark:bg-black">
+    <div className="relative flex-1 flex flex-col bg-white dark:bg-black overflow-y-auto">
       {/* Grid Background - Clickable */}
       <div
         className={cn(
@@ -89,44 +90,44 @@ export function WelcomeScreen({ onPick }: { onPick: (q: string) => void }) {
         onClick={handleBackgroundClick}
       />
       {/* Radial gradient for the container to give a faded look */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)] dark:bg-black"></div>
+      <div className="pointer-events-none absolute inset-0 bg-white [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)] dark:bg-black"></div>
 
       {/* Content */}
-      <div className="relative z-20 max-w-6xl w-full text-center space-y-10 p-8">
-        <div className="space-y-6 pointer-events-none">
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <img src="/logo.svg" alt="FloatChat Logo" className="w-16 h-16" />
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+      <div className="relative z-20 max-w-6xl w-full text-center space-y-8 p-6 mx-auto flex-1 flex flex-col justify-center">
+        <div className="space-y-4 pointer-events-none">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Image src="/logo.svg" alt="FloatChat Logo" width={48} height={48} className="w-12 h-12" />
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
               FloatChat
             </h1>
           </div>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-lg text-muted-foreground">
             Your AI assistant for ocean data exploration
           </p>
-          <p className="text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          <p className="text-sm text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Explore ocean temperature, salinity, and pressure data from the
             Indian Ocean Argo float network.
           </p>
         </div>
 
         {/* Shortcut Queries */}
-        <div className="space-y-6 pointer-events-auto">
+        <div className="space-y-4 pointer-events-auto">
           <div className="text-center">
-            <h2 className="text-2xl font-semibold text-foreground mb-2">
+            <h2 className="text-xl font-semibold text-foreground mb-1">
               Quick Start Queries
             </h2>
-            <p className="text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Click on any query below to get started instantly
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-6xl mx-auto">
             {shortcutQueries.map((shortcut, index) => (
               <Button
                 key={index}
                 variant="outline"
                 className={cn(
-                  "h-auto p-4 text-left justify-start border-2 transition-all duration-200 hover:scale-105 hover:shadow-lg min-h-[100px]",
+                  "h-auto p-3 text-left justify-start border-2 transition-all duration-200 hover:scale-105 hover:shadow-lg min-h-[80px]",
                   shortcut.color,
                 )}
                 onClick={() => handleShortcutClick(shortcut.query)}
@@ -134,7 +135,7 @@ export function WelcomeScreen({ onPick }: { onPick: (q: string) => void }) {
                 <div className="flex items-start gap-3 w-full h-full">
                   <div className="flex-shrink-0 mt-1">{shortcut.icon}</div>
                   <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <h3 className="font-semibold text-sm mb-2 leading-tight">
+                    <h3 className="font-semibold text-xs mb-1 leading-tight">
                       {shortcut.title}
                     </h3>
                     <p className="text-xs opacity-80 leading-relaxed line-clamp-2">
@@ -146,8 +147,6 @@ export function WelcomeScreen({ onPick }: { onPick: (q: string) => void }) {
             ))}
           </div>
         </div>
-
-        <div className="pt-4 pointer-events-none"></div>
       </div>
     </div>
   );

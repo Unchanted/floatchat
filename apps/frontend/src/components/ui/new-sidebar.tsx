@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import { cn } from "../../lib/utils";
 import { IconMenu2, IconX, IconPlus, IconHistory, IconMessage, IconSettings, IconHelpCircle, IconUser, IconTrash } from "@tabler/icons-react";
 import { usePathname } from "next/navigation";
@@ -22,7 +23,7 @@ interface NewSidebarProps {
   variant?: "solid" | "transparent"; // solid: card bg with border/shadow, transparent: embedded look
 }
 
-export function NewSidebar({ children, links = [], footer, className, variant = "solid" }: NewSidebarProps) {
+export function NewSidebar({ children, footer, className, variant = "solid" }: NewSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -74,10 +75,10 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
         transition={{ duration: 0.2, ease: "easeInOut" }}
       >
         {/* Header */}
-        <div className="p-4 border-b border-border">
+        <div className="p-3 border-b border-border/50">
           <div className="flex items-center gap-3">
             {shouldShowLogo ? (
-              <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8 shrink-0" />
+              <Image src="/logo.svg" alt="FloatChat Logo" width={32} height={32} className="w-8 h-8 shrink-0" />
             ) : (
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
                 <span className="text-primary-foreground font-bold text-sm">F</span>
@@ -104,12 +105,12 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
             <button 
               onClick={handleNewChat}
               className={cn(
-                "flex items-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors",
-                isExpanded ? "w-full justify-center px-4 py-3 gap-2" : "w-10 h-10 justify-center p-0 mx-auto gap-0"
+                "flex items-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md",
+                isExpanded ? "w-full justify-center px-4 py-2.5 gap-2" : "w-10 h-10 justify-center p-0 mx-auto gap-0"
               )}
               title="New Search"
             >
-              <IconPlus className="w-5 h-5 shrink-0" />
+              <IconPlus className="w-4 h-4 shrink-0" />
               <motion.span
                 className="text-sm font-medium whitespace-nowrap"
                 initial={{ opacity: 0, width: 0 }}
@@ -126,10 +127,10 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
 
           {/* Recent Searches */}
           {chats.length > 0 && (
-            <div className="flex-1 px-3">
+            <div className="flex-1 px-3 overflow-hidden">
               <div className="mb-3">
                 <motion.div
-                  className="flex items-center gap-2 px-1 mb-2"
+                  className="flex items-center gap-2 px-1 mb-3"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: isExpanded ? 1 : 0 }}
                   transition={{ duration: 0.2 }}
@@ -139,18 +140,18 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                     Recent Searches
                   </span>
                 </motion.div>
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {chats.slice(0, 6).map((chat) => (
                     <div
                       key={chat.id}
                       className={cn(
-                        "w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent rounded-md transition-colors group relative",
+                        "w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent/50 rounded-md transition-all duration-200 group relative",
                         activeChatId === chat.id && "bg-accent"
                       )}
                     >
                       <button
                         onClick={() => handleChatClick(chat.id)}
-                        className="flex items-center gap-3 flex-1 text-left"
+                        className="flex items-center gap-3 flex-1 text-left min-w-0"
                         title={chat.title}
                       >
                         <IconMessage className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
@@ -166,7 +167,7 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                           <p className="text-sm text-foreground line-clamp-2 leading-tight">
                             {chat.title}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {formatTime(chat.updatedAt)}
                           </p>
                         </motion.div>
@@ -189,10 +190,10 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
         </div>
 
         {/* Footer */}
-        <div className="p-2 border-t border-border mt-auto">
+        <div className="p-3 border-t border-border/50 mt-auto">
           <div className="space-y-0.5">
-            <button className="w-full flex items-center gap-3 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group" title="Settings">
-              <IconSettings className="w-5 h-5 text-muted-foreground group-hover:text-foreground shrink-0" />
+            <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent/50 rounded-md transition-all duration-200 group" title="Settings">
+              <IconSettings className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
               <motion.span
                 className="text-sm text-foreground"
                 initial={{ opacity: 0, width: 0 }}
@@ -205,8 +206,8 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                 Settings
               </motion.span>
             </button>
-            <button className="w-full flex items-center gap-3 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group" title="Help & Support">
-              <IconHelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-foreground shrink-0" />
+            <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent/50 rounded-md transition-all duration-200 group" title="Help & Support">
+              <IconHelpCircle className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
               <motion.span
                 className="text-sm text-foreground"
                 initial={{ opacity: 0, width: 0 }}
@@ -219,8 +220,8 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                 Help & Support
               </motion.span>
             </button>
-            <button className="w-full flex items-center gap-3 px-2 py-1.5 text-left hover:bg-accent rounded-md transition-colors group" title="Account">
-              <IconUser className="w-5 h-5 text-muted-foreground group-hover:text-foreground shrink-0" />
+            <button className="w-full flex items-center gap-3 px-2 py-2 text-left hover:bg-accent/50 rounded-md transition-all duration-200 group" title="Account">
+              <IconUser className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
               <motion.span
                 className="text-sm text-foreground"
                 initial={{ opacity: 0, width: 0 }}
@@ -238,10 +239,10 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
       </motion.div>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-card border-b border-border flex items-center justify-between px-4">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-16 bg-card/95 backdrop-blur-sm border-b border-border flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
           {shouldShowLogo ? (
-            <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8" />
+            <Image src="/logo.svg" alt="FloatChat Logo" width={32} height={32} className="w-8 h-8" />
           ) : (
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">F</span>
@@ -251,7 +252,7 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
         </div>
         <button
           onClick={() => setIsMobileOpen(true)}
-          className="p-2 hover:bg-accent rounded-lg transition-colors"
+          className="p-2 hover:bg-accent/50 rounded-lg transition-all duration-200"
         >
           <IconMenu2 className="w-5 h-5 text-foreground" />
         </button>
@@ -282,7 +283,7 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
               <div className="p-4 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {shouldShowLogo ? (
-                    <img src="/logo.svg" alt="FloatChat Logo" className="w-8 h-8" />
+                    <Image src="/logo.svg" alt="FloatChat Logo" width={32} height={32} className="w-8 h-8" />
                   ) : (
                     <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                       <span className="text-primary-foreground font-bold text-sm">F</span>
@@ -305,15 +306,15 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                 ) : (
                   <div className="flex-1 py-4">
                     {/* New Chat Button */}
-                    <div className="px-4 mb-4">
+                    <div className="px-4 mb-6">
                       <button 
                         onClick={() => {
                           handleNewChat();
                           setIsMobileOpen(false);
                         }}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
                       >
-                        <IconPlus className="w-5 h-5" />
+                        <IconPlus className="w-4 h-4" />
                         <span className="text-sm font-medium">New Search</span>
                       </button>
                     </div>
@@ -321,18 +322,18 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                     {/* Recent Chats */}
                     {chats.length > 0 && (
                       <div className="px-4">
-                        <div className="flex items-center gap-2 mb-3">
+                        <div className="flex items-center gap-2 mb-4">
                           <IconHistory className="w-4 h-4 text-muted-foreground" />
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Recent Searches
                           </span>
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           {chats.slice(0, 8).map((chat) => (
                             <div
                               key={chat.id}
                               className={cn(
-                                "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-accent rounded-md transition-colors group relative",
+                                "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-accent/50 rounded-md transition-all duration-200 group relative",
                                 activeChatId === chat.id && "bg-accent"
                               )}
                             >
@@ -341,14 +342,14 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
                                   handleChatClick(chat.id);
                                   setIsMobileOpen(false);
                                 }}
-                                className="flex items-center gap-3 flex-1 text-left"
+                                className="flex items-center gap-3 flex-1 text-left min-w-0"
                               >
                                 <IconMessage className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0" />
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm text-foreground line-clamp-2 leading-tight">
                                     {chat.title}
                                   </p>
-                                  <p className="text-xs text-muted-foreground mt-1">
+                                  <p className="text-xs text-muted-foreground mt-0.5">
                                     {formatTime(chat.updatedAt)}
                                   </p>
                                 </div>
@@ -386,39 +387,5 @@ export function NewSidebar({ children, links = [], footer, className, variant = 
   );
 }
 
-interface SidebarLinkItemProps {
-  link: SidebarLink;
-  isExpanded: boolean;
-  onClick?: () => void;
-}
-
-function SidebarLinkItem({ link, isExpanded, onClick }: SidebarLinkItemProps) {
-  const handleClick = () => {
-    link.onClick?.();
-    onClick?.();
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent transition-colors group"
-    >
-      <div className="shrink-0 w-5 h-5 flex items-center justify-center text-muted-foreground group-hover:text-foreground">
-        {link.icon}
-      </div>
-      <motion.span
-        className="text-sm text-foreground whitespace-nowrap"
-        initial={{ opacity: 0, x: -10 }}
-        animate={{ 
-          opacity: isExpanded ? 1 : 0,
-          x: isExpanded ? 0 : -10
-        }}
-        transition={{ duration: 0.2 }}
-      >
-        {link.label}
-      </motion.span>
-    </button>
-  );
-}
 
 export type { SidebarLink };

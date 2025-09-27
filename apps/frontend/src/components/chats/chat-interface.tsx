@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { ScrollArea } from "../../../../../packages/ui/src/components/scroll-area";
-import { Button } from "../../../../../packages/ui/src/components/button";
 import { Separator } from "../../../../../packages/ui/src/components/separator";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { WelcomeScreen } from "./welcome-screen";
 import { ThinkingIndicator } from "./thinking-indicator";
-import { Search, Sparkles, MoreHorizontal } from "lucide-react";
 import { useWebSocket } from "../../contexts/websocket-context";
 import { useChat } from "../../contexts/chat-context";
 
 type Role = "user" | "assistant";
+
+interface TableDataRow {
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+interface QueryMeta {
+  [key: string]: unknown;
+}
+
+interface GraphAnalysis {
+  [key: string]: unknown;
+}
 
 export interface Message {
   id: string;
@@ -20,17 +30,34 @@ export interface Message {
   content: string;
   timestamp: string;
   sources?: Array<{ title: string; url: string }>;
-  tableData?: Array<Record<string, any>>;
-  fullTableData?: Array<Record<string, any>>;
-  queryMeta?: any;
+  tableData?: Array<TableDataRow>;
+  fullTableData?: Array<TableDataRow>;
+  queryMeta?: QueryMeta;
   thinkingSteps?: string[];
-  graphAnalysis?: any;
+  graphAnalysis?: GraphAnalysis;
 }
 
 interface LoadingState {
   isLoading: boolean;
   stage?: "analyzing" | "searching" | "generating" | "processing";
   thinking?: string[];
+}
+
+interface OceanDataSummary {
+  [key: string]: unknown;
+}
+
+interface OceanDataResult {
+  dynamic_analysis?: string;
+  summary?: OceanDataSummary[] | OceanDataSummary;
+  summaries?: Array<{
+    point: { lat: number; lon: number };
+    error?: string;
+    summary?: OceanDataSummary[];
+    full_summary?: OceanDataSummary[];
+  }>;
+  full_summary?: OceanDataSummary[];
+  graph_analysis?: GraphAnalysis;
 }
 
 // Updated WebSocket response interface to handle all backend message types
@@ -44,10 +71,11 @@ export interface WebSocketResponse {
   // Backend stage messages
   stage?: string;
   message?: string;
-  result?: any;
+  result?: OceanDataResult;
   error?: string;
   traceback?: string;
   thinking?: string[];
+  query_meta?: QueryMeta;
 }
 
 export function ChatInterface() {
@@ -60,13 +88,13 @@ export function ChatInterface() {
   const { connectionStatus, isConnected, sendMessage: wsSendMessage, onMessage, onError, onClose } = useWebSocket();
   
   // Use the chat context
-  const { activeChat, addMessageToChat, updateChatTitle } = useChat();
+  const { activeChat, addMessageToChat } = useChat();
   
   // Get messages from the active chat
-  const messages = activeChat?.messages || [];
+  const messages = useMemo(() => activeChat?.messages || [], [activeChat?.messages]);
 
   // Helper function to format result data for display
-  const formatResultForDisplay = (result: any): string => {
+  const formatResultForDisplay = (result: OceanDataResult | null | undefined): string => {
     if (!result) return "No data available.";
     
     try {
@@ -83,7 +111,7 @@ export function ChatInterface() {
       } else if (result.summaries) {
         // Handle multiple point queries
         const totalPoints = result.summaries.length;
-        const successfulPoints = result.summaries.filter((s: any) => !s.error).length;
+        const successfulPoints = result.summaries.filter((s) => !s.error).length;
         const errorPoints = totalPoints - successfulPoints;
         
         let content = `🌊 **Multi-Point Ocean Data Analysis**\n\nAnalyzed ${totalPoints} locations in the ocean:\n\n`;
@@ -97,7 +125,7 @@ export function ChatInterface() {
         }
         
         content += `\n**Data Summary:**\n`;
-        result.summaries.forEach((summary: any, index: number) => {
+        result.summaries.forEach((summary, index: number) => {
           const point = summary.point;
           if (summary.error) {
             content += `- Point ${index + 1} (${point.lat}°N, ${point.lon}°E): No data available\n`;
@@ -111,7 +139,7 @@ export function ChatInterface() {
         // Fallback for other object types
         return `📊 **Data Retrieved Successfully**\n\nReceived oceanographic data from your query. The response contains:\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``;
       } else {
-        return result.toString();
+        return String(result);
       }
     } catch (error) {
       console.error("Error formatting result:", error);
@@ -189,19 +217,19 @@ export function ChatInterface() {
             console.log("📋 Stage: Final result received");
             const resultPayload = data.result;
             // Prefer single summary table if present
-            let tableData: Array<Record<string, any>> | undefined =
+            let tableData: Array<TableDataRow> | undefined =
               resultPayload &&
               Array.isArray(resultPayload.summary) &&
               resultPayload.summary.length > 0 &&
               typeof resultPayload.summary[0] === 'object'
-                ? (resultPayload.summary as Array<Record<string, any>>)
+                ? (resultPayload.summary as Array<TableDataRow>)
                 : undefined;
 
             // Otherwise, if summaries array exists (multi-point), pick the first non-empty summary
             if (!tableData && Array.isArray(resultPayload?.summaries)) {
-              const firstWithData = resultPayload.summaries.find((s: any) => Array.isArray(s?.summary) && s.summary.length > 0 && typeof s.summary[0] === 'object');
+              const firstWithData = resultPayload.summaries.find((s) => Array.isArray(s?.summary) && s.summary.length > 0 && typeof s.summary[0] === 'object');
               if (firstWithData) {
-                tableData = firstWithData.summary as Array<Record<string, any>>;
+                tableData = firstWithData.summary as Array<TableDataRow>;
               }
             }
 
@@ -215,15 +243,15 @@ export function ChatInterface() {
               fullTableData: (() => {
                 // If backend included a full_summary, surface it for toggle
                 if (resultPayload && Array.isArray(resultPayload.full_summary)) {
-                  return resultPayload.full_summary as Array<Record<string, any>>;
+                  return resultPayload.full_summary as Array<TableDataRow>;
                 }
                 if (Array.isArray(resultPayload?.summaries)) {
-                  const firstWithFull = resultPayload.summaries.find((s: any) => Array.isArray(s?.full_summary));
-                  if (firstWithFull) return firstWithFull.full_summary as Array<Record<string, any>>;
+                  const firstWithFull = resultPayload.summaries.find((s) => Array.isArray(s?.full_summary));
+                  if (firstWithFull) return firstWithFull.full_summary as Array<TableDataRow>;
                 }
                 return undefined;
               })(),
-              queryMeta: (data as any).query_meta,
+              queryMeta: data.query_meta,
               thinkingSteps: [...currentThinkingSteps],
               sources: [
                 { title: "Argo Global Data Assembly Centre", url: "https://argo.ucsd.edu" },
@@ -531,7 +559,7 @@ export function ChatInterface() {
       <ConnectionStatus />
       
       {/* Main Content Container */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {messages.length === 0 ? (
           <WelcomeScreen onPick={sendMessage} />
         ) : (

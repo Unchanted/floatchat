@@ -16,7 +16,7 @@ export interface OceanDataPoint {
   TEMP?: number;
   PSAL?: number;
   PRES?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface GraphAnalysis {
@@ -34,7 +34,7 @@ export interface GraphAnalysis {
 
 interface OceanDataGraphProps {
   data: OceanDataPoint[];
-  queryMeta?: any;
+  queryMeta?: Record<string, unknown>;
   graphAnalysis?: GraphAnalysis;
 }
 
@@ -47,7 +47,7 @@ type VisualizationType =
   | "scatter_plot"
   | "histogram";
 
-export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGraphProps) {
+export function OceanDataGraph({ data, graphAnalysis }: OceanDataGraphProps) {
   const [activeViz, setActiveViz] = React.useState<VisualizationType>("map");
   const hasSetInitialViz = React.useRef(false);
 
@@ -134,21 +134,21 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
 
     switch (activeViz) {
       case "map":
-        return <LocationMap data={data} queryMeta={queryMeta} />;
+        return <LocationMap data={data} />;
       case "temperature_map":
-        return <TemperatureMap data={data} queryMeta={queryMeta} />;
+        return <TemperatureMap data={data} />;
       case "salinity_map":
-        return <SalinityMap data={data} queryMeta={queryMeta} />;
+        return <SalinityMap data={data} />;
       case "pressure_map":
-        return <PressureMap data={data} queryMeta={queryMeta} />;
+        return <PressureMap data={data} />;
       case "time_series":
-        return <TimeSeriesChart data={data} queryMeta={queryMeta} />;
+        return <TimeSeriesChart data={data} />;
       case "scatter_plot":
-        return <ScatterPlot data={data} queryMeta={queryMeta} />;
+        return <ScatterPlot data={data} />;
       case "histogram":
-        return <HistogramChart data={data} queryMeta={queryMeta} />;
+        return <HistogramChart data={data} />;
       default:
-        return <LocationMap data={data} queryMeta={queryMeta} />;
+        return <LocationMap data={data} />;
     }
   };
 
@@ -161,11 +161,11 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
             key={viz}
             variant={activeViz === viz ? "default" : "outline"}
             size="sm"
-            onClick={() => setActiveViz(viz)}
+            onClick={() => setActiveViz(viz as VisualizationType)}
             className="flex items-center gap-2"
           >
-            {getVizIcon(viz)}
-            {getVizLabel(viz)}
+            {getVizIcon(viz as VisualizationType)}
+            {getVizLabel(viz as VisualizationType)}
           </Button>
         ))}
       </div>
@@ -205,7 +205,7 @@ export function OceanDataGraph({ data, queryMeta, graphAnalysis }: OceanDataGrap
 }
 
 // Individual visualization components
-function LocationMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function LocationMap({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const uniqueLocations = data.reduce((acc, point) => {
       const key = `${point.LATITUDE},${point.LONGITUDE}`;
@@ -263,7 +263,7 @@ function LocationMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   );
 }
 
-function TemperatureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function TemperatureMap({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const tempData = data.filter(d => d.TEMP !== undefined && d.TEMP !== null);
     
@@ -332,7 +332,7 @@ function TemperatureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta
   );
 }
 
-function SalinityMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function SalinityMap({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const salinityData = data.filter(d => d.PSAL !== undefined && d.PSAL !== null);
     
@@ -401,7 +401,7 @@ function SalinityMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   );
 }
 
-function PressureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function PressureMap({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const pressureData = data.filter(d => d.PRES !== undefined && d.PRES !== null);
     
@@ -470,7 +470,7 @@ function PressureMap({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   );
 }
 
-function TimeSeriesChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function TimeSeriesChart({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const timeData = data
       .filter(d => d.TIME && d.TEMP !== undefined && d.TEMP !== null)
@@ -525,7 +525,7 @@ function TimeSeriesChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMet
   );
 }
 
-function ScatterPlot({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function ScatterPlot({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const scatterData = data.filter(d => d.TEMP !== undefined && d.PSAL !== undefined && d.TEMP !== null && d.PSAL !== null);
     
@@ -582,7 +582,7 @@ function ScatterPlot({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: 
   );
 }
 
-function HistogramChart({ data, queryMeta }: { data: OceanDataPoint[]; queryMeta?: any }) {
+function HistogramChart({ data }: { data: OceanDataPoint[] }) {
   const plotData = useMemo(() => {
     const tempData = data.filter(d => d.TEMP !== undefined && d.TEMP !== null).map(d => d.TEMP!);
     
