@@ -33,6 +33,11 @@ export class WebSocketService {
     this.url = url;
   }
 
+//   constructor(url: string = "wss://fastapi-production-1a8d1.up.railway.app/ws") {
+//     this.url = url;
+// }
+
+
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {

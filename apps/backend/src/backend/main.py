@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 # Google GenAI imports (per user's example)
 from google import genai
@@ -44,6 +45,14 @@ app = FastAPI()
 #     embedding_function=sentence_transformer_ef,
 #     persist_directory="./chroma_db",
 # )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or specify your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
