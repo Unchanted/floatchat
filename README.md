@@ -70,6 +70,8 @@ To add a new component to the frontend app:
 pnpm dlx shadcn@latest add button -c apps/frontend
 ```
 
+hari om
+
 Components will be placed in `apps/frontend/components/ui`.
 
 ---
@@ -89,3 +91,6 @@ import { Button } from "@/components/ui/button";
 ```
 
 ---
+
+
+jai shree ram 
