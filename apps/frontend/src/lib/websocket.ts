@@ -29,13 +29,13 @@ export class WebSocketService {
   private errorCallback?: (error: Event | Error) => void;
   private closeCallback?: (event: CloseEvent) => void;
 
-  constructor(url: string = "ws://localhost:8000/ws") {
-    this.url = url;
-  }
+  // constructor(url: string = "ws://localhost:8000/ws") {
+  //   this.url = url;
+  // }
 
-//   constructor(url: string = "wss://fastapi-production-1a8d1.up.railway.app/ws") {
-//     this.url = url;
-// }
+  constructor(url: string = "wss:api.render.com/deploy/srv-d3d9khqdbo4c73ertvm0/ws") {
+    this.url = url;
+}
 
 
   connect(): Promise<void> {
