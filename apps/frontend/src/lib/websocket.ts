@@ -33,9 +33,12 @@ export class WebSocketService {
   //   this.url = url;
   // }
 
-  constructor(url: string = "wss:api.render.com/deploy/srv-d3d9khqdbo4c73ertvm0/ws") {
-    this.url = url;
+constructor(
+  url: string = "wss://my-websocket-service-50738805959.asia-south1.run.app/ws"
+) {
+  this.url = url;
 }
+
 
 
   connect(): Promise<void> {
